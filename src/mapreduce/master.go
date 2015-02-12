@@ -49,7 +49,7 @@ func (mr *MapReduce) RunMaster() *list.List {
 		jobNum := i
 
 		go func() {
-			jobArgs := DoJobArgs{File: mr.file, Operation: Map, JobNumber: jobNum}
+			jobArgs := DoJobArgs{File: mr.file, Operation: Map, JobNumber: jobNum, NumOtherPhase: mr.nReduce}
 
 			var workerChosen WorkerInfo;
 
@@ -61,7 +61,7 @@ func (mr *MapReduce) RunMaster() *list.List {
 				}
 			}
 			reply := &DoJobReply{false}
-			fmt.Println("ASSIGNING WORK", workerChosen.address, jobArgs, DoJobReply{false})
+			// fmt.Println("ASSIGNING WORK", workerChosen.address, jobArgs, DoJobReply{false})
 
 			call(workerChosen.address, "Worker.DoJob", &jobArgs, reply)
 			workerChosen.working = true
@@ -72,7 +72,7 @@ func (mr *MapReduce) RunMaster() *list.List {
 			if numDone == mr.nMap {
 				done <- true
 			}
-			fmt.Println("DONE WITH", numDone)
+			// fmt.Println("DONE WITH", numDone)
 		}()
 	}
 
@@ -80,9 +80,43 @@ func (mr *MapReduce) RunMaster() *list.List {
 
 	fmt.Println(doneWithMap, "DONE WITH MAP")
 
+	numDoneReduce := 0
+	doneReduce := make(chan bool)
 
+	for i := 0; i < mr.nReduce; i++ {
+		jobNum := i
 
-	test := <- mr.DoneChannel
-	fmt.Println(test)
+		go func() {
+			jobArgs := DoJobArgs{File: mr.file, Operation: Reduce, JobNumber: jobNum, NumOtherPhase: mr.nMap}
+
+			var workerChosen WorkerInfo;
+
+			for len(workerChosen.address) < 1 {
+				for _, v := range mr.Workers {
+					if(!v.working){
+						workerChosen = *v
+					}
+				}
+			}
+			reply := &DoJobReply{false}
+			// fmt.Println("ASSIGNING Reduce WORK", workerChosen.address, jobArgs, DoJobReply{false})
+
+			call(workerChosen.address, "Worker.DoJob", &jobArgs, reply)
+			workerChosen.working = true
+			for !reply.OK {
+
+			}
+			numDoneReduce += 1
+			if numDoneReduce == mr.nReduce {
+				doneReduce <- true
+			}
+			// fmt.Println("DONE WITH Reduce", numDoneReduce)
+		}()
+	}
+
+	doneWithReduce := <- doneReduce
+
+	fmt.Println(doneWithReduce, "DONE WITH REDUCE")
+
 	return mr.KillWorkers()
 }

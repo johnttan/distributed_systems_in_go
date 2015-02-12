@@ -63,6 +63,7 @@ type MapReduce struct {
 	// Map of registered workers that you need to keep up to date
 	Workers map[string]*WorkerInfo
 
+
 	// add any additional state here
 }
 
@@ -378,4 +379,5 @@ func (mr *MapReduce) Run() {
 	fmt.Printf("%s: MapReduce done\n", mr.MasterAddress)
 
 	mr.DoneChannel <- true
+
 }
