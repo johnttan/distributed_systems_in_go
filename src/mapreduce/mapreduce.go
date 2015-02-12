@@ -174,6 +174,7 @@ func (mr *MapReduce) Split(fileName string) {
 		writer.WriteString(line)
 		i += len(line)
 	}
+
 	writer.Flush()
 	outfile.Close()
 }

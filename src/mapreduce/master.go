@@ -29,18 +29,29 @@ func (mr *MapReduce) KillWorkers() *list.List {
 }
 
 func (mr *MapReduce) RunMaster() *list.List {
+	mr.Workers = make(map[string]*WorkerInfo)
 	// Your code here
+	fmt.Println("NUMMAPS", mr.nMap)
+	fmt.Println("NUMREDUCES", mr.nReduce)
 	go func() {
 		for {
 			worker := <- mr.registerChannel
-			fmt.Println("worker", worker)
-			mr.Workers[worker] = new WorkerInfo{
-				address: worker
-			}
-			fmt.Println(mr.Workers)
+			mr.Workers[worker] = &WorkerInfo{address: worker}
+			fmt.Println("ASSIGNING WORKERS", mr.Workers)
 		}
 	}()
 
+	done := 0
 
+	for i := range mr.nMap {
+		go func() {
+			mr.DoMap(i, mr.file)
+			done = done + 1
+			fmt.Println(done)
+		}()
+	}
+
+	test := <- mr.DoneChannel
+	fmt.Println(test)
 	return mr.KillWorkers()
 }
