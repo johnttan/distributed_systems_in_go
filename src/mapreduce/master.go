@@ -34,6 +34,10 @@ func (mr *MapReduce) RunMaster() *list.List {
 		for {
 			worker := <- mr.registerChannel
 			fmt.Println("worker", worker)
+			mr.Workers[worker] = new WorkerInfo{
+				address: worker
+			}
+			fmt.Println(mr.Workers)
 		}
 	}()
 
