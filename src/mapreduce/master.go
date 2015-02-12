@@ -65,10 +65,8 @@ func (mr *MapReduce) RunMaster() *list.List {
 
 			call(workerChosen.address, "Worker.DoJob", &jobArgs, reply)
 			workerChosen.working = true
-			for !reply.OK {
+			fmt.Println(reply.OK)
 
-			}
-			numDone += 1
 			if numDone == mr.nMap {
 				done <- true
 			}
