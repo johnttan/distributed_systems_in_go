@@ -6,6 +6,7 @@ import "fmt"
 
 type WorkerInfo struct {
 	address string
+	working bool
 	// You can add definitions here.
 }
 
@@ -36,20 +37,50 @@ func (mr *MapReduce) RunMaster() *list.List {
 	go func() {
 		for {
 			worker := <- mr.registerChannel
-			mr.Workers[worker] = &WorkerInfo{address: worker}
-			fmt.Println("ASSIGNING WORKERS", mr.Workers)
+			mr.Workers[worker] = &WorkerInfo{address: worker, working:false}
+			fmt.Println("REGISTERINGWORKERS", mr.Workers)
 		}
 	}()
 
-	done := 0
+	numDone := 0
+	done := make(chan bool)
 
-	for i := range mr.nMap {
+	for i := 0; i < mr.nMap; i++ {
+		jobNum := i
+
 		go func() {
-			mr.DoMap(i, mr.file)
-			done = done + 1
-			fmt.Println(done)
+			jobArgs := DoJobArgs{File: mr.file, Operation: Map, JobNumber: jobNum}
+
+			var workerChosen WorkerInfo;
+
+			for len(workerChosen.address) < 1 {
+				for _, v := range mr.Workers {
+					if(!v.working){
+						workerChosen = *v
+					}
+				}
+			}
+			reply := &DoJobReply{false}
+			fmt.Println("ASSIGNING WORK", workerChosen.address, jobArgs, DoJobReply{false})
+
+			call(workerChosen.address, "Worker.DoJob", &jobArgs, reply)
+			workerChosen.working = true
+			for !reply.OK {
+
+			}
+			numDone += 1
+			if numDone == mr.nMap {
+				done <- true
+			}
+			fmt.Println("DONE WITH", numDone)
 		}()
 	}
+
+	doneWithMap := <- done
+
+	fmt.Println(doneWithMap, "DONE WITH MAP")
+
+
 
 	test := <- mr.DoneChannel
 	fmt.Println(test)
