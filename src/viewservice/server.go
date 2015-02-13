@@ -18,6 +18,7 @@ type Node struct {
 	// 3 = primary
 	state uint
 	ticksSincePing uint
+	viewNum uint
 }
 
 type ViewServer struct {
@@ -27,8 +28,7 @@ type ViewServer struct {
 	rpccount int32 // for testing
 	me       string
 
-	views map[uint]*View
-	currentView uint
+	currentView *View
 
 	nodes map[string]*Node
 	// Your declarations here.
@@ -41,20 +41,26 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 
 	// Your code here.
 	if vs.nodes[args.Me] == nil {
+
 		vs.nodes[args.Me] = new(Node)
 		vs.nodes[args.Me].state = 1
+		vs.nodes[args.Me].viewNum = args.Viewnum
+
 		if vs.views[vs.currentView].Primary == "" {
-			fmt.Println("PRIMARY", vs.views[vs.currentView].Primary)
+			fmt.Println("PRIMARY", vs.currentView.Primary)
 			fmt.Println("ME", args.Me)
-			vs.views[vs.currentView].Primary = args.Me
-		}else if vs.views[vs.currentView].Backup == "" {
-			fmt.Println("BACKUP", vs.views[vs.currentView].Backup)
+			vs.currentView.Primary = args.Me
+		}else if vs.currentView.Backup == "" {
+			fmt.Println("BACKUP", vs.currentView.Backup)
 			fmt.Println("ME", args.Me)
-			vs.views[vs.currentView].Backup = args.Me
+			vs.currentView.Backup = args.Me
 		}
+	}else{
+		vs.nodes[args.Me].ticksSincePing = 0
+		vs.nodes[args.Me].viewNum = args.Viewnum
 	}
 
-	reply.View = *vs.views[vs.currentView]
+	reply.View = *vs.currentView
 
 	return nil
 }
@@ -65,7 +71,7 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 func (vs *ViewServer) Get(args *GetArgs, reply *GetReply) error {
 
 	// Your code here.
-	reply.View = *vs.views[vs.currentView]
+	reply.View = *vs.currentView
 	return nil
 }
 
@@ -105,9 +111,6 @@ func StartServer(me string) *ViewServer {
 	vs.me = me
 	// Your vs.* initializations here.
 	vs.nodes = make(map[string]*Node)
-	vs.views = make(map[uint]*View)
-	vs.views[vs.currentView] = new(View)
-	vs.views[vs.currentView].Viewnum = vs.currentView
 
 	// tell net/rpc about our RPC server and handlers.
 	rpcs := rpc.NewServer()
