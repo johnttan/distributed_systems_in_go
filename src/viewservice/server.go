@@ -161,6 +161,8 @@ func (vs *ViewServer) tick() {
 			vs.newView()
 		}
 		if node.state == 0 && vs.currentView.Primary == node.id{
+			// Checks that dead primary is synced. Cannot advanced to next view if not synced.
+			// Checks that backup node is initialized and synced
 			if vs.currentView.Viewnum == node.viewNum && vs.currentView.Viewnum == vs.nodes[vs.currentView.Backup].viewNum{
 				vs.currentView.Primary = vs.currentView.Backup
 				vs.nodes[vs.currentView.Primary].state = 3
