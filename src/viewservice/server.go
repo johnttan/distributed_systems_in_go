@@ -124,6 +124,11 @@ func (vs *ViewServer) tick() {
 				vs.newView()
 			}
 		}
+		if node.state == 0 && vs.currentView.Primary == node.id {
+			vs.currentView.Primary = vs.currentView.Backup
+			vs.currentView.Backup = ""
+			vs.newView()
+		}
 	}
 	// Your code here.
 }
