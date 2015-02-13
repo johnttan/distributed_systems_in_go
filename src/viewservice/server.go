@@ -54,19 +54,16 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 
 	}else if vs.nodes[args.Me].viewNum > args.Viewnum {
 		vs.nodes[args.Me].state = 1
-		fmt.Println("DETECTED RESTARTED SERVER", args.Me)
+		fmt.Println("DETECTED RESTARTED SERVER", args.Me, args.Viewnum)
 	}else{
 		vs.nodes[args.Me].ticksSincePing = 0
 		vs.nodes[args.Me].viewNum = args.Viewnum
 	}
 
-	// if vs.nodes[args.Me].state == 0 {
-	// 	vs.nodes[args.Me].state = 1
-	// }
 	vs.nodes[args.Me].ticksSincePing = 0
 
 	reply.View = *vs.currentView
-
+	fmt.Println("PING VIEWNUM", args.Me, args.Viewnum, vs.nodes[args.Me].viewNum)
 	return nil
 }
 
@@ -115,16 +112,24 @@ func (vs *ViewServer) newView() {
 			newView.Backup = node.id
 			node.state = 2
 		}
+		fmt.Println("VIEWNUMS IN NEWVIEW", node.id, node.viewNum, vs.currentView.Viewnum)
 	}
 
 	if vs.currentView.Primary != "" {
-		fmt.Println("PRIMARY VIEWNUM", vs.nodes[vs.currentView.Primary].viewNum, vs.currentView.Viewnum)
+		fmt.Println("PRIMARY VIEWNUM", vs.currentView.Primary, vs.nodes[vs.currentView.Primary].viewNum, vs.currentView.Viewnum)
 	}
 
-	if vs.currentView.Primary != "" && vs.nodes[vs.currentView.Primary].viewNum < vs.currentView.Viewnum {
+	if (vs.currentView.Primary != "" && vs.nodes[vs.currentView.Primary].viewNum < vs.currentView.Viewnum) {
 		fmt.Println("WAITING ON VIEW")
 	}else{
 		vs.currentView = newView
+		// if vs.currentView.Backup != "" {
+		// 	if vs.nodes[vs.currentView.Backup].viewNum < vs.currentView.Viewnum {
+		// 		fmt.Println("BACKUP RESET", vs.nodes[vs.currentView.Backup].viewNum, vs.currentView.Viewnum)
+		// 		vs.nodes[vs.currentView.Backup].state = 1
+		// 		vs.currentView.Backup = ""
+		// 	}
+		// }
 	}
 
 	fmt.Println("NEW PRIMARY", vs.currentView.Primary)
@@ -156,12 +161,12 @@ func (vs *ViewServer) tick() {
 			vs.newView()
 		}
 		if node.state == 0 && vs.currentView.Primary == node.id{
-			if vs.currentView.Viewnum == node.viewNum {
+			if vs.currentView.Viewnum == node.viewNum && vs.currentView.Viewnum == vs.nodes[vs.currentView.Backup].viewNum{
 				vs.currentView.Primary = vs.currentView.Backup
 				vs.nodes[vs.currentView.Primary].state = 3
 				vs.currentView.Backup = ""
 				fmt.Println("PROMOTED", vs.currentView.Primary)
-				fmt.Println("VIEWNUM AFTER PROMOTION", vs.currentView.Viewnum, node.viewNum)
+				fmt.Println("VIEWNUM AFTER PROMOTION", vs.currentView.Primary, vs.currentView.Viewnum, vs.nodes[vs.currentView.Primary].viewNum)
 				vs.newView()
 			}
 
