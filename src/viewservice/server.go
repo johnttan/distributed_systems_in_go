@@ -11,6 +11,7 @@ import "sync/atomic"
 
 
 type Node struct {
+	id string
 	// Node.state
 	// 0 = dead
 	// 1 = available but not backup/primary
@@ -45,21 +46,20 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 		vs.nodes[args.Me] = new(Node)
 		vs.nodes[args.Me].state = 1
 		vs.nodes[args.Me].viewNum = args.Viewnum
+		vs.nodes[args.Me].id = args.Me
 
-		if vs.views[vs.currentView].Primary == "" {
-			fmt.Println("PRIMARY", vs.currentView.Primary)
-			fmt.Println("ME", args.Me)
-			vs.currentView.Primary = args.Me
-		}else if vs.currentView.Backup == "" {
-			fmt.Println("BACKUP", vs.currentView.Backup)
-			fmt.Println("ME", args.Me)
-			vs.currentView.Backup = args.Me
+		if vs.currentView.Primary == "" || vs.currentView.Backup == "" {
+			vs.newView()
 		}
+
 	}else{
 		vs.nodes[args.Me].ticksSincePing = 0
 		vs.nodes[args.Me].viewNum = args.Viewnum
 	}
 
+	if vs.nodes[args.Me].state == 0 {
+		vs.nodes[args.Me].state = 1
+	}
 	reply.View = *vs.currentView
 
 	return nil
@@ -75,6 +75,23 @@ func (vs *ViewServer) Get(args *GetArgs, reply *GetReply) error {
 	return nil
 }
 
+func (vs *ViewServer) newView() {
+	newView := new(View)
+	newView.Viewnum = vs.currentView.Viewnum + 1
+	for _, node := range vs.nodes {
+		if node.state == 1 && newView.Primary == "" {
+			newView.Primary = node.id
+			node.state = 3
+		}
+		if node.state == 1 && newView.Backup == "" {
+			newView.Backup = node.id
+			node.state = 2
+		}
+	}
+	vs.currentView = newView
+	fmt.Println("NEW VIEW")
+
+}
 
 //
 // tick() is called once per PingInterval; it should notice
@@ -86,6 +103,12 @@ func (vs *ViewServer) tick() {
 		node.ticksSincePing += 1
 		if node.ticksSincePing >= DeadPings {
 			node.state = 0
+		}
+		if node.state == 1 && vs.currentView.Primary == node.id {
+			if node.viewNum == vs.currentView.Viewnum {
+
+				vs.newView()
+			}
 		}
 	}
 	// Your code here.
@@ -111,7 +134,7 @@ func StartServer(me string) *ViewServer {
 	vs.me = me
 	// Your vs.* initializations here.
 	vs.nodes = make(map[string]*Node)
-
+	vs.currentView = new(View)
 	// tell net/rpc about our RPC server and handlers.
 	rpcs := rpc.NewServer()
 	rpcs.Register(vs)
