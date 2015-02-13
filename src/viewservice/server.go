@@ -52,14 +52,19 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 			vs.newView()
 		}
 
+	}else if vs.nodes[args.Me].viewNum > args.Viewnum {
+		vs.nodes[args.Me].state = 1
+		fmt.Println("DETECTED RESTARTED SERVER", args.Me)
 	}else{
 		vs.nodes[args.Me].ticksSincePing = 0
 		vs.nodes[args.Me].viewNum = args.Viewnum
 	}
 
-	if vs.nodes[args.Me].state == 0 {
-		vs.nodes[args.Me].state = 1
-	}
+	// if vs.nodes[args.Me].state == 0 {
+	// 	vs.nodes[args.Me].state = 1
+	// }
+	vs.nodes[args.Me].ticksSincePing = 0
+
 	reply.View = *vs.currentView
 
 	return nil
@@ -72,6 +77,8 @@ func (vs *ViewServer) Get(args *GetArgs, reply *GetReply) error {
 
 	// Your code here.
 	reply.View = *vs.currentView
+	// fmt.Println("CURRENT BACKUP", vs.currentView.Backup)
+	// fmt.Println("CURRENT PRIMARY", vs.currentView.Primary)
 	return nil
 }
 
@@ -79,15 +86,22 @@ func (vs *ViewServer) newView() {
 	newView := new(View)
 	currentPrimary := vs.currentView.Primary
 	currentBackup := vs.currentView.Backup
-
+	fmt.Println("CREATING NEW VIEW", vs.currentView.Backup, vs.currentView.Primary)
 	if currentPrimary != "" {
-		if vs.nodes[vs.currentView.Primary].state >= 1 {
+		fmt.Println("CURRENT PRIMARY IN NEWVIEW", vs.currentView.Primary, vs.nodes[vs.currentView.Primary].state, "BACKUP", vs.currentView.Backup)
+		if vs.nodes[vs.currentView.Primary].state > 1 {
 			newView.Primary = vs.currentView.Primary
+		}else {
+			newView.Primary = vs.currentView.Backup
+			vs.nodes[vs.currentView.Backup].state = 3
+			currentBackup = ""
 		}
 	}
 	if currentBackup != "" {
-		if vs.nodes[vs.currentView.Backup].state >= 1 {
+		if vs.nodes[vs.currentView.Backup].state > 1 {
 			newView.Backup = vs.currentView.Backup
+		}else {
+			newView.Backup = ""
 		}
 	}
 
@@ -117,6 +131,7 @@ func (vs *ViewServer) tick() {
 	for _, node := range vs.nodes {
 		node.ticksSincePing += 1
 		if node.ticksSincePing >= DeadPings {
+			fmt.Println("SETTING DEAD", node.id)
 			node.state = 0
 		}
 		if node.state == 1 && vs.currentView.Primary == node.id {
@@ -124,12 +139,26 @@ func (vs *ViewServer) tick() {
 				vs.newView()
 			}
 		}
-		if node.state == 0 && vs.currentView.Primary == node.id {
-			vs.currentView.Primary = vs.currentView.Backup
+		if node.state == 0 && vs.currentView.Backup == node.id {
+			vs.nodes[vs.currentView.Backup].state = 0
 			vs.currentView.Backup = ""
+			fmt.Println("DETECTED BACKUP FAILURE")
 			vs.newView()
 		}
+		if node.state == 0 && vs.currentView.Primary == node.id {
+			vs.currentView.Primary = vs.currentView.Backup
+			vs.nodes[vs.currentView.Primary].state = 3
+			vs.currentView.Backup = ""
+			fmt.Println("PROMOTED", vs.currentView.Primary)
+			vs.newView()
+		}
+
+		if node.state == 1 && vs.currentView.Backup == "" {
+			vs.newView()
+		}
+		// fmt.Println("LOOPING NODES", node.id, node.state)
 	}
+	fmt.Println("IN TICK", vs.currentView.Backup, vs.currentView.Primary)
 	// Your code here.
 }
 
