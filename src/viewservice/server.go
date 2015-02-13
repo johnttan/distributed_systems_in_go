@@ -77,6 +77,20 @@ func (vs *ViewServer) Get(args *GetArgs, reply *GetReply) error {
 
 func (vs *ViewServer) newView() {
 	newView := new(View)
+	currentPrimary := vs.currentView.Primary
+	currentBackup := vs.currentView.Backup
+
+	if currentPrimary != "" {
+		if vs.nodes[vs.currentView.Primary].state >= 1 {
+			newView.Primary = vs.currentView.Primary
+		}
+	}
+	if currentBackup != "" {
+		if vs.nodes[vs.currentView.Backup].state >= 1 {
+			newView.Backup = vs.currentView.Backup
+		}
+	}
+
 	newView.Viewnum = vs.currentView.Viewnum + 1
 	for _, node := range vs.nodes {
 		if node.state == 1 && newView.Primary == "" {
@@ -89,7 +103,8 @@ func (vs *ViewServer) newView() {
 		}
 	}
 	vs.currentView = newView
-	fmt.Println("NEW VIEW")
+	fmt.Println("NEW PRIMARY", vs.currentView.Primary)
+	fmt.Println("NEW BACKUP", vs.currentView.Backup)
 
 }
 
@@ -106,7 +121,6 @@ func (vs *ViewServer) tick() {
 		}
 		if node.state == 1 && vs.currentView.Primary == node.id {
 			if node.viewNum == vs.currentView.Viewnum {
-
 				vs.newView()
 			}
 		}
