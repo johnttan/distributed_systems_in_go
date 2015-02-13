@@ -40,7 +40,7 @@ type ViewServer struct {
 //
 func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 
-	// Your code here.
+	// New node logic.
 	if vs.nodes[args.Me] == nil {
 
 		vs.nodes[args.Me] = new(Node)
@@ -51,11 +51,12 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 		if vs.currentView.Primary == "" || vs.currentView.Backup == "" {
 			vs.newView()
 		}
-
+// Detected server that is behind/restarted
 	}else if vs.nodes[args.Me].viewNum > args.Viewnum {
 		vs.nodes[args.Me].state = 1
 		fmt.Println("DETECTED RESTARTED SERVER", args.Me, args.Viewnum)
 	}else{
+		// Reset ticks and viewNum
 		vs.nodes[args.Me].ticksSincePing = 0
 		vs.nodes[args.Me].viewNum = args.Viewnum
 	}
