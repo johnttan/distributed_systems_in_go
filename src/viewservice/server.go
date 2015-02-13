@@ -9,6 +9,17 @@ import "fmt"
 import "os"
 import "sync/atomic"
 
+
+type Node struct {
+	// Node.state
+	// 0 = dead
+	// 1 = available but not backup/primary
+	// 2 = backup
+	// 3 = primary
+	state uint
+	ticksSincePing uint
+}
+
 type ViewServer struct {
 	mu       sync.Mutex
 	l        net.Listener
@@ -16,9 +27,10 @@ type ViewServer struct {
 	rpccount int32 // for testing
 	me       string
 
-	views map[uint]View
+	views map[uint]*View
 	currentView uint
-	nodes map[string]uint
+
+	nodes map[string]*Node
 	// Your declarations here.
 }
 
@@ -28,10 +40,21 @@ type ViewServer struct {
 func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 
 	// Your code here.
-	if !vs.nodes[args.Me] {
-		vs.nodes[args.Me] = 0
+	if vs.nodes[args.Me] == nil {
+		vs.nodes[args.Me] = new(Node)
+		vs.nodes[args.Me].state = 1
+		if vs.views[vs.currentView].Primary == "" {
+			fmt.Println("PRIMARY", vs.views[vs.currentView].Primary)
+			fmt.Println("ME", args.Me)
+			vs.views[vs.currentView].Primary = args.Me
+		}else if vs.views[vs.currentView].Backup == "" {
+			fmt.Println("BACKUP", vs.views[vs.currentView].Backup)
+			fmt.Println("ME", args.Me)
+			vs.views[vs.currentView].Backup = args.Me
+		}
 	}
-	reply.View = vs.views[vs.currentView]
+
+	reply.View = *vs.views[vs.currentView]
 
 	return nil
 }
@@ -42,7 +65,7 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 func (vs *ViewServer) Get(args *GetArgs, reply *GetReply) error {
 
 	// Your code here.
-
+	reply.View = *vs.views[vs.currentView]
 	return nil
 }
 
@@ -53,7 +76,12 @@ func (vs *ViewServer) Get(args *GetArgs, reply *GetReply) error {
 // accordingly.
 //
 func (vs *ViewServer) tick() {
-
+	for _, node := range vs.nodes {
+		node.ticksSincePing += 1
+		if node.ticksSincePing >= DeadPings {
+			node.state = 0
+		}
+	}
 	// Your code here.
 }
 
@@ -76,6 +104,10 @@ func StartServer(me string) *ViewServer {
 	vs := new(ViewServer)
 	vs.me = me
 	// Your vs.* initializations here.
+	vs.nodes = make(map[string]*Node)
+	vs.views = make(map[uint]*View)
+	vs.views[vs.currentView] = new(View)
+	vs.views[vs.currentView].Viewnum = vs.currentView
 
 	// tell net/rpc about our RPC server and handlers.
 	rpcs := rpc.NewServer()
