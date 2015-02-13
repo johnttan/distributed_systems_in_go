@@ -91,7 +91,7 @@ func (vs *ViewServer) newView() {
 		fmt.Println("CURRENT PRIMARY IN NEWVIEW", vs.currentView.Primary, vs.nodes[vs.currentView.Primary].state, "BACKUP", vs.currentView.Backup)
 		if vs.nodes[vs.currentView.Primary].state > 1 {
 			newView.Primary = vs.currentView.Primary
-		}else {
+		}else if currentBackup != "" {
 			newView.Primary = vs.currentView.Backup
 			vs.nodes[vs.currentView.Backup].state = 3
 			currentBackup = ""
