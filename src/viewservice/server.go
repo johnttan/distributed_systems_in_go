@@ -116,7 +116,17 @@ func (vs *ViewServer) newView() {
 			node.state = 2
 		}
 	}
-	vs.currentView = newView
+
+	if vs.currentView.Primary != "" {
+		fmt.Println("PRIMARY VIEWNUM", vs.nodes[vs.currentView.Primary].viewNum, vs.currentView.Viewnum)
+	}
+
+	if vs.currentView.Primary != "" && vs.nodes[vs.currentView.Primary].viewNum < vs.currentView.Viewnum {
+		fmt.Println("WAITING ON VIEW")
+	}else{
+		vs.currentView = newView
+	}
+
 	fmt.Println("NEW PRIMARY", vs.currentView.Primary)
 	fmt.Println("NEW BACKUP", vs.currentView.Backup)
 
@@ -145,12 +155,16 @@ func (vs *ViewServer) tick() {
 			fmt.Println("DETECTED BACKUP FAILURE")
 			vs.newView()
 		}
-		if node.state == 0 && vs.currentView.Primary == node.id {
-			vs.currentView.Primary = vs.currentView.Backup
-			vs.nodes[vs.currentView.Primary].state = 3
-			vs.currentView.Backup = ""
-			fmt.Println("PROMOTED", vs.currentView.Primary)
-			vs.newView()
+		if node.state == 0 && vs.currentView.Primary == node.id{
+			if vs.currentView.Viewnum == node.viewNum {
+				vs.currentView.Primary = vs.currentView.Backup
+				vs.nodes[vs.currentView.Primary].state = 3
+				vs.currentView.Backup = ""
+				fmt.Println("PROMOTED", vs.currentView.Primary)
+				fmt.Println("VIEWNUM AFTER PROMOTION", vs.currentView.Viewnum, node.viewNum)
+				vs.newView()
+			}
+
 		}
 
 		if node.state == 1 && vs.currentView.Backup == "" {
