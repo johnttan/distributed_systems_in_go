@@ -16,7 +16,9 @@ type ViewServer struct {
 	rpccount int32 // for testing
 	me       string
 
-
+	views map[uint]View
+	currentView uint
+	nodes map[string]uint
 	// Your declarations here.
 }
 
@@ -26,6 +28,10 @@ type ViewServer struct {
 func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 
 	// Your code here.
+	if !vs.nodes[args.Me] {
+		vs.nodes[args.Me] = 0
+	}
+	reply.View = vs.views[vs.currentView]
 
 	return nil
 }
