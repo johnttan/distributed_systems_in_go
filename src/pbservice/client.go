@@ -6,13 +6,13 @@ import "fmt"
 import "crypto/rand"
 import "math/big"
 
-// import "time"
+import "time"
 
 type Clerk struct {
 	vs *viewservice.Clerk
 	// Your declarations here
 	primary string
-	me string
+	me      string
 }
 
 // this may come in handy.
@@ -32,7 +32,6 @@ func MakeClerk(vshost string, me string) *Clerk {
 	ck.primary = ck.vs.Primary()
 	return ck
 }
-
 
 //
 // call() sends an RPC to the rpcname handler on server srv
@@ -107,6 +106,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	var args *PutAppendArgs
 	var reply *PutAppendReply
 	var finished bool
+	count := 0
 	rand := nrand()
 	for !finished {
 		// time.Sleep(100 * time.Millisecond)
@@ -121,10 +121,15 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 		if !finished {
 			ck.primary = ck.vs.Primary()
 		}
-		// fmt.Println("RETRYING", ck.primary, reply, key, value)
+		if count > 10000 {
+			fmt.Println("RETRYING", ck.primary, key)
+			time.Sleep(100 * time.Millisecond)
+		}
+		count++
 	}
 	return reply.PreviousValue
 }
+
 //
 // tell the primary to update key's value.
 // must keep trying until it succeeds.

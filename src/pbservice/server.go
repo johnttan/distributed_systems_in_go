@@ -69,6 +69,10 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 				reply.Err = ErrWrongServer
 			}
 		}
+		reply.Viewnum = pb.viewNum
+		pb.uniqueIds[args.Id] = reply
+
+		fmt.Println(args.Id, args.Key, reply.Err, pb.view)
 	} else if args.Op == REPLICATE {
 		if pb.state == 1 {
 			reply.PreviousValue = pb.store[args.Key]
@@ -78,32 +82,27 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 		}
 	} else if pb.uniqueIds[args.Id] != nil {
 		reply.Err = pb.uniqueIds[args.Id].Err
-		if reply.Err != OK && reply.Err != ErrWrongServer {
-			reply.Err = OK
-		}
 		reply.PreviousValue = pb.uniqueIds[args.Id].PreviousValue
 	} else {
 		reply.Err = ErrWrongServer
+		reply.Viewnum = pb.viewNum
 	}
 	// if reply.Err == ErrWrongServer {
 	// 	fmt.Println(pb.state, pb.me, pb.vs, args)
 	// }
-	pb.uniqueIds[args.Id] = reply
-	pb.uniqueIds[args.Id].Viewnum = pb.viewNum
-
 	pb.mu.Unlock()
 	return nil
 }
 
 func (pb *PBServer) Migrate() {
-	pb.mu.Lock()
+	// pb.mu.Lock()
 	if pb.state == 2 {
 		args := &MigrationArgs{pb.store}
 		reply := &MigrationReply{}
 		call(pb.view.Backup, "PBServer.Restore", args, reply)
 	}
 
-	pb.mu.Unlock()
+	// pb.mu.Unlock()
 }
 
 func (pb *PBServer) Restore(args *MigrationArgs, reply *MigrationReply) error {
@@ -125,7 +124,9 @@ func (pb *PBServer) Restore(args *MigrationArgs, reply *MigrationReply) error {
 //   manage transfer of state from primary to new backup.
 //
 func (pb *PBServer) tick() {
+	pb.mu.Lock()
 	view, err := pb.vs.Ping(pb.viewNum)
+	fmt.Println(pb.me, view)
 	if err == nil {
 		if view.Primary == pb.me {
 			pb.state = 2
@@ -144,6 +145,7 @@ func (pb *PBServer) tick() {
 		pb.view = view
 		// fmt.Println("CURRENT VIEW IN PB", pb.viewNum, pb.view, pb.me, "RECEIVEDVIEW", view)
 	}
+	pb.mu.Unlock()
 }
 
 // tell the server to shut itself down.

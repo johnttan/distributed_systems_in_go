@@ -65,7 +65,7 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 	vs.nodes[args.Me].ticksSincePing = 0
 
 	reply.View = *vs.currentView
-	// fmt.Println("PING VIEWNUM", args.Me, args.Viewnum, vs.nodes[args.Me].viewNum)
+	fmt.Println("PING VIEWNUM", args.Me, args.Viewnum, vs.nodes[args.Me].viewNum, vs.currentView)
 	vs.mu.Unlock()
 	return nil
 }

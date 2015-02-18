@@ -424,6 +424,8 @@ func checkAppends(t *testing.T, v string, counts []int) {
 
 			off := strings.Index(v, wanted)
 			if off < 0 {
+				fmt.Println("GOT", v)
+				fmt.Println("WANTED", wanted)
 				t.Fatalf("missing element in Append result")
 			}
 			off1 := strings.LastIndex(v, wanted)
