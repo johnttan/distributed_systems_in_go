@@ -108,12 +108,11 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	var reply *PutAppendReply
 	var finished bool
 
-
 	for !finished {
 		if ck.primary != "" {
 			args = &PutAppendArgs{Key: key, Value: value, Op: op, Id: nrand()}
 			reply = &PutAppendReply{}
-			call(ck.primary, "PBServer.PutAppend", args, reply)
+			call(ck.primary, "PBServer.PutAppendReplicate", args, reply)
 			if reply.Err == OK {
 				finished = true
 			}
@@ -124,7 +123,6 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	}
 	return reply.PreviousValue
 }
-
 //
 // tell the primary to update key's value.
 // must keep trying until it succeeds.

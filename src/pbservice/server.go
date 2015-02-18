@@ -27,7 +27,8 @@ type PBServer struct {
 // 1 for backup
 // 2 for primary
 	state      uint
-	uniqueIds map[int64]bool
+	uniqueIds  map[int64]bool
+	view       View
 }
 
 
@@ -48,26 +49,38 @@ func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
 	return nil
 }
 
-
-func (pb *PBServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
+func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendReply) error {
 	// fmt.Println(args)
-	// Your code here.
+// Decide between puts, appends, and replicates.
 	if pb.state == 2 {
 		reply.PreviousValue = pb.store[args.Key]
-		reply.Err = OK
 		if args.Op == "Put" && !pb.uniqueIds[args.Id] {
 			pb.store[args.Key] = args.Value
 		} else if args.Op == "Append" {
 			pb.store[args.Key] += args.Value
 		}
-		pb.uniqueIds[args.Id] = true
+		if pb.view.Backup != "" {
+			repArgs := &PutAppendArgs{Key: args.Key, Value: args.Value, Op: "Replicate", Id: args.id}
+			repReply := &PutAppendReply
+			call(pb.view.Backup, "PBServer.PutAppendReplicate", repArgs, repReply)
+			if repReply.Err == OK {
+				pb.uniqueIds[args.Id] = true
+				reply.Err = OK
+			}else {
+				reply.Err = ErrWrongServer
+			}
+		}else {
+			pb.uniqueIds[args.Id] = true
+			reply.Err = OK
+		}
+	} else if pb.state == 1 && args.Op == "Replicate" {
+		pb.store[args.Key] = args.Value
 	} else {
 		reply.Err = ErrWrongServer
 	}
 
 	return nil
 }
-
 
 //
 // ping the viewserver periodically.
@@ -84,6 +97,7 @@ func (pb *PBServer) tick() {
 			pb.state = 1
 		}
 		pb.viewNum = view.Viewnum
+		pb.view = view
 	}
 }
 
