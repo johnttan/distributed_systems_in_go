@@ -4,6 +4,9 @@ const (
 	OK             = "OK"
 	ErrNoKey       = "ErrNoKey"
 	ErrWrongServer = "ErrWrongServer"
+	PUT = "PUT"
+	APPEND = "APPEND"
+	REPLICATE = "REPLICATE"
 )
 
 type Err string
@@ -30,7 +33,7 @@ type GetReply struct {
 	Value string
 }
 
-type Migration struct {
+type MigrationArgs struct {
 	Store map[string]string
 }
 

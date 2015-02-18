@@ -46,19 +46,19 @@ func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
 
 	return nil
 }
-
+// This should most likely be broken up.
 func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendReply) error {
 	// fmt.Println(args)
 // Decide between puts, appends, and replicates.
 	if pb.state == 2 {
 		reply.PreviousValue = pb.store[args.Key]
-		if args.Op == "Put" && !pb.uniqueIds[args.Id] {
+		if args.Op == PUT && !pb.uniqueIds[args.Id] {
 			pb.store[args.Key] = args.Value
-		} else if args.Op == "Append" {
+		} else if args.Op == APPEND {
 			pb.store[args.Key] += args.Value
 		}
 		if pb.view.Backup != "" {
-			repArgs := &PutAppendArgs{Key: args.Key, Value: args.Value, Op: "Replicate", Id: args.Id}
+			repArgs := &PutAppendArgs{Key: args.Key, Value: args.Value, Op: REPLICATE, Id: args.Id}
 			repReply := &PutAppendReply{}
 			// fmt.Println("Begin replicating KEY:VALUE", args.Key, args.Value)
 			// BEGIN REPLICATING
@@ -74,7 +74,7 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 			pb.uniqueIds[args.Id] = true
 			reply.Err = OK
 		}
-	} else if pb.state == 1 && args.Op == "Replicate" {
+	} else if pb.state == 1 && args.Op == REPLICATE {
 		// fmt.Println("REPLICATING VALUE IN BACKUP", args.Key, args.Value)
 		reply.PreviousValue = pb.store[args.Key]
 		pb.store[args.Key] = args.Value
@@ -94,7 +94,7 @@ func (pb *PBServer) Migrate() {
 	}
 }
 
-func (pb *PBServer) Restore(args *MigrationArgs, reply *MigrationReply) {
+func (pb *PBServer) Restore(args *MigrationArgs, reply *MigrationReply) error{
 	if pb.state == 1 {
 		reply.Err = OK
 		pb.store = args.Store
