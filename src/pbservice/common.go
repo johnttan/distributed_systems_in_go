@@ -29,3 +29,11 @@ type GetReply struct {
 	Err   Err
 	Value string
 }
+
+type Migration struct {
+	Store map[string]string
+}
+
+type MigrationReply struct {
+	Err Err
+}

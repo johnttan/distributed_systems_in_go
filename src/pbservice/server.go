@@ -11,8 +11,6 @@ import "os"
 import "syscall"
 import "math/rand"
 
-
-
 type PBServer struct {
 	mu         sync.Mutex
 	l          net.Listener
@@ -28,7 +26,7 @@ type PBServer struct {
 // 2 for primary
 	state      uint
 	uniqueIds  map[int64]bool
-	view       View
+	view       viewservice.View
 }
 
 
@@ -60,13 +58,16 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 			pb.store[args.Key] += args.Value
 		}
 		if pb.view.Backup != "" {
-			repArgs := &PutAppendArgs{Key: args.Key, Value: args.Value, Op: "Replicate", Id: args.id}
-			repReply := &PutAppendReply
+			repArgs := &PutAppendArgs{Key: args.Key, Value: args.Value, Op: "Replicate", Id: args.Id}
+			repReply := &PutAppendReply{}
+			// fmt.Println("Begin replicating KEY:VALUE", args.Key, args.Value)
+			// BEGIN REPLICATING
 			call(pb.view.Backup, "PBServer.PutAppendReplicate", repArgs, repReply)
 			if repReply.Err == OK {
 				pb.uniqueIds[args.Id] = true
 				reply.Err = OK
 			}else {
+				// ERROR REPLICATING
 				reply.Err = ErrWrongServer
 			}
 		}else {
@@ -74,12 +75,22 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 			reply.Err = OK
 		}
 	} else if pb.state == 1 && args.Op == "Replicate" {
+		// fmt.Println("REPLICATING VALUE IN BACKUP", args.Key, args.Value)
+		reply.PreviousValue = pb.store[args.Key]
 		pb.store[args.Key] = args.Value
+		reply.Err = OK
 	} else {
 		reply.Err = ErrWrongServer
 	}
 
 	return nil
+}
+
+func (pb *PBServer) migrate() {
+	if pb.state == 2 {
+		args := &MigrationArgs
+		call(pb.view.Backup, "PBServer.Restore", args, reply)
+	}
 }
 
 //
@@ -96,6 +107,13 @@ func (pb *PBServer) tick() {
 		} else if view.Backup == pb.me {
 			pb.state = 1
 		}
+
+		if view.Backup != pb.view.Backup {
+			pb.viewNum = view.Viewnum
+			pb.view = view
+			pb.migrate()
+		}
+
 		pb.viewNum = view.Viewnum
 		pb.view = view
 	}
@@ -118,6 +136,9 @@ func StartServer(vshost string, me string) *PBServer {
 	pb.viewNum = 0;
 	pb.store = make(map[string]string)
 	pb.uniqueIds = make(map[int64]bool)
+	pb.view = *new(viewservice.View)
+
+
 	rpcs := rpc.NewServer()
 	rpcs.Register(pb)
 
