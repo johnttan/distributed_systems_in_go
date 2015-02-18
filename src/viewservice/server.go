@@ -19,6 +19,7 @@ type Node struct {
 	state          uint
 	ticksSincePing uint
 	viewNum        uint
+	ack            bool
 }
 
 type ViewServer struct {
@@ -61,6 +62,10 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 	node.ticksSincePing = 0
 
 	reply.View = *vs.view
+
+	if node.viewNum == vs.view.Viewnum {
+		node.ack = true
+	}
 	vs.mu.Unlock()
 	return nil
 }
@@ -83,28 +88,24 @@ func (vs *ViewServer) hasBackup() bool {
 }
 
 func (vs *ViewServer) eligibleForNewView() bool {
-	return !(vs.hasPrimary() && vs.nodes[vs.view.Primary].viewNum < vs.view.Viewnum)
+	return !(vs.hasPrimary() && !vs.nodes[vs.view.Primary].ack)
 }
 
 func (vs *ViewServer) newView() {
 	// Don't create new view and mutate state if primary hasn't acked.
 	if vs.eligibleForNewView() {
-		if vs.hasPrimary() {
-			if vs.nodes[vs.view.Primary].state > 1 {
-			} else if vs.hasBackup() {
-				vs.view.Primary = vs.view.Backup
-				vs.nodes[vs.view.Backup].state = 3
-				vs.view.Backup = ""
-			}
+		if vs.hasPrimary() && vs.nodes[vs.view.Primary].state <= 1 && vs.hasBackup() {
+			vs.view.Primary = vs.view.Backup
+			vs.nodes[vs.view.Backup].state = 3
+			vs.view.Backup = ""
 		}
-		if vs.hasBackup() {
-			if vs.nodes[vs.view.Backup].state <= 1 {
-				vs.view.Backup = ""
-			}
+		if vs.hasBackup() && vs.nodes[vs.view.Backup].state <= 1 {
+			vs.view.Backup = ""
 		}
 
 		vs.view.Viewnum += 1
 		for _, node := range vs.nodes {
+			node.ack = false
 			if node.state == 1 && !vs.hasPrimary() {
 				vs.view.Primary = node.id
 				node.state = 3
@@ -127,25 +128,20 @@ func (vs *ViewServer) tick() {
 		node.ticksSincePing += 1
 		if node.ticksSincePing >= DeadPings {
 			node.state = 0
-		}
-		if node.state == 1 && vs.view.Primary == node.id && node.viewNum == vs.view.Viewnum {
-			vs.newView()
-		}
-		if node.state == 0 && vs.view.Backup == node.id {
-			vs.nodes[vs.view.Backup].state = 0
-			vs.view.Backup = ""
-			vs.newView()
-		}
-		if node.state == 0 && vs.view.Primary == node.id {
-			// Checks that dead primary is synced. Cannot advanced to next view if not synced.
-			// Checks that backup node is initialized and synced
-			if vs.hasBackup() && vs.view.Viewnum == node.viewNum && vs.view.Viewnum == vs.nodes[vs.view.Backup].viewNum {
-				// vs.view.Primary = vs.view.Backup
-				// vs.nodes[vs.view.Primary].state = 3
-				// vs.view.Backup = ""
+			if vs.view.Backup == node.id {
+				vs.view.Backup = ""
+				vs.newView()
+			}
+			if vs.view.Primary == node.id && vs.hasBackup() && node.ack && vs.nodes[vs.view.Backup].ack {
+				// Checks that dead primary is synced. Cannot advanced to next view if not synced.
+				// Checks that backup node is initialized and synced
 				// fmt.Println("PROMOTED", vs.view.Primary)
 				vs.newView()
 			}
+		}
+
+		if node.state == 1 && vs.view.Primary == node.id && node.ack {
+			vs.newView()
 		}
 		if node.state == 1 && !vs.hasBackup() {
 			vs.newView()
