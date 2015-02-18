@@ -86,11 +86,20 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 	return nil
 }
 
-func (pb *PBServer) migrate() {
+func (pb *PBServer) Migrate() {
 	if pb.state == 2 {
-		args := &MigrationArgs
+		args := &MigrationArgs{pb.store}
+		reply := &MigrationReply{}
 		call(pb.view.Backup, "PBServer.Restore", args, reply)
 	}
+}
+
+func (pb *PBServer) Restore(args *MigrationArgs, reply *MigrationReply) {
+	if pb.state == 1 {
+		reply.Err = OK
+		pb.store = args.Store
+	}
+	return nil
 }
 
 //
@@ -111,7 +120,7 @@ func (pb *PBServer) tick() {
 		if view.Backup != pb.view.Backup {
 			pb.viewNum = view.Viewnum
 			pb.view = view
-			pb.migrate()
+			pb.Migrate()
 		}
 
 		pb.viewNum = view.Viewnum
