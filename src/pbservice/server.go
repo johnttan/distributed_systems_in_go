@@ -21,21 +21,49 @@ type PBServer struct {
 	me         string
 	vs         *viewservice.Clerk
 	// Your declarations here.
+	viewNum    uint
+	store      map[string]string
+// 0 for unassigned
+// 1 for backup
+// 2 for primary
+	state      uint
+	uniqueIds map[int64]bool
 }
 
 
 func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
 
 	// Your code here.
+	if pb.state == 2 {
+		if pb.store[args.Key] == "" {
+			reply.Err = ErrNoKey
+		}else {
+			reply.Err = OK
+			reply.Value = pb.store[args.Key]
+		}
+	} else {
+		reply.Err = ErrWrongServer
+	}
 
 	return nil
 }
 
 
 func (pb *PBServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
-
+	// fmt.Println(args)
 	// Your code here.
-
+	if pb.state == 2 {
+		reply.PreviousValue = pb.store[args.Key]
+		reply.Err = OK
+		if args.Op == "Put" && !pb.uniqueIds[args.Id] {
+			pb.store[args.Key] = args.Value
+		} else if args.Op == "Append" {
+			pb.store[args.Key] += args.Value
+		}
+		pb.uniqueIds[args.Id] = true
+	} else {
+		reply.Err = ErrWrongServer
+	}
 
 	return nil
 }
@@ -48,8 +76,15 @@ func (pb *PBServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error 
 //   manage transfer of state from primary to new backup.
 //
 func (pb *PBServer) tick() {
-
-	// Your code here.
+	view, err := pb.vs.Ping(pb.viewNum)
+	if err == nil {
+		if view.Primary == pb.me {
+			pb.state = 2
+		} else if view.Backup == pb.me {
+			pb.state = 1
+		}
+		pb.viewNum = view.Viewnum
+	}
 }
 
 // tell the server to shut itself down.
@@ -66,6 +101,9 @@ func StartServer(vshost string, me string) *PBServer {
 	pb.vs = viewservice.MakeClerk(me, vshost)
 	// Your pb.* initializations here.
 
+	pb.viewNum = 0;
+	pb.store = make(map[string]string)
+	pb.uniqueIds = make(map[int64]bool)
 	rpcs := rpc.NewServer()
 	rpcs.Register(pb)
 
@@ -75,6 +113,7 @@ func StartServer(vshost string, me string) *PBServer {
 		log.Fatal("listen error: ", e)
 	}
 	pb.l = l
+	fmt.Println(pb)
 
 	// please do not change any of the following code,
 	// or do anything to subvert it.

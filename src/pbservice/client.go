@@ -11,6 +11,8 @@ import "math/big"
 type Clerk struct {
 	vs *viewservice.Clerk
 	// Your declarations here
+	primary string
+	me string
 }
 
 // this may come in handy.
@@ -25,7 +27,9 @@ func MakeClerk(vshost string, me string) *Clerk {
 	ck := new(Clerk)
 	ck.vs = viewservice.MakeClerk(me, vshost)
 	// Your ck.* initializations here
-
+	ck.me = me
+	ck.primary = ck.vs.Primary()
+	fmt.Println(ck)
 	return ck
 }
 
@@ -59,7 +63,7 @@ func call(srv string, rpcname string,
 		return true
 	}
 
-	fmt.Println(err)
+	// fmt.Println(err)
 	return false
 }
 
@@ -74,7 +78,25 @@ func (ck *Clerk) Get(key string) string {
 
 	// Your code here.
 
-	return "???"
+	var args *GetArgs
+	var reply *GetReply
+	var finished bool
+
+	for !finished {
+		if ck.primary != "" {
+			args = &GetArgs{key}
+			reply = &GetReply{}
+			call(ck.primary, "PBServer.Get", args, reply)
+			// fmt.Println(ck.primary, reply)
+			if reply.Err == OK || reply.Err == ErrNoKey {
+				finished = true
+			}
+		}
+		if !finished {
+			ck.primary = ck.vs.Primary()
+		}
+	}
+	return reply.Value
 }
 
 //
@@ -82,8 +104,25 @@ func (ck *Clerk) Get(key string) string {
 //
 func (ck *Clerk) PutAppend(key string, value string, op string) string {
 
-	// Your code here.
-	return "???"
+	var args *PutAppendArgs
+	var reply *PutAppendReply
+	var finished bool
+
+
+	for !finished {
+		if ck.primary != "" {
+			args = &PutAppendArgs{Key: key, Value: value, Op: op, Id: nrand()}
+			reply = &PutAppendReply{}
+			call(ck.primary, "PBServer.PutAppend", args, reply)
+			if reply.Err == OK {
+				finished = true
+			}
+		}
+		if !finished {
+			ck.primary = ck.vs.Primary()
+		}
+	}
+	return reply.PreviousValue
 }
 
 //
