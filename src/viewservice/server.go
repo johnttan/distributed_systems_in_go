@@ -105,11 +105,11 @@ func (vs *ViewServer) newView() {
 
 		vs.view.Viewnum += 1
 		for _, node := range vs.nodes {
-			if node.state == 1 && vs.view.Primary == "" {
+			if node.state == 1 && !vs.hasPrimary() {
 				vs.view.Primary = node.id
 				node.state = 3
 			}
-			if node.state == 1 && vs.view.Backup == "" {
+			if node.state == 1 && !vs.hasBackup() {
 				vs.view.Backup = node.id
 				node.state = 2
 			}
@@ -129,23 +129,21 @@ func (vs *ViewServer) tick() {
 			node.state = 0
 		}
 		if node.state == 1 && vs.view.Primary == node.id && node.viewNum == vs.view.Viewnum {
-			fmt.Println("RUNS", node, vs.view)
 			vs.newView()
 		}
 		if node.state == 0 && vs.view.Backup == node.id {
 			vs.nodes[vs.view.Backup].state = 0
 			vs.view.Backup = ""
-			// fmt.Println("DETECTED BACKUP FAILURE")
 			vs.newView()
 		}
 		if node.state == 0 && vs.view.Primary == node.id {
 			// Checks that dead primary is synced. Cannot advanced to next view if not synced.
 			// Checks that backup node is initialized and synced
 			if vs.hasBackup() && vs.view.Viewnum == node.viewNum && vs.view.Viewnum == vs.nodes[vs.view.Backup].viewNum {
-				vs.view.Primary = vs.view.Backup
-				vs.nodes[vs.view.Primary].state = 3
-				vs.view.Backup = ""
-				fmt.Println("PROMOTED", vs.view.Primary)
+				// vs.view.Primary = vs.view.Backup
+				// vs.nodes[vs.view.Primary].state = 3
+				// vs.view.Backup = ""
+				// fmt.Println("PROMOTED", vs.view.Primary)
 				vs.newView()
 			}
 		}
