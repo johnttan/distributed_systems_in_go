@@ -22,6 +22,7 @@ type PutAppendArgs struct {
 type PutAppendReply struct {
 	Err           Err
 	PreviousValue string
+	Viewnum uint
 }
 
 type GetArgs struct {

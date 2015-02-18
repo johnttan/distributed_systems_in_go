@@ -3,10 +3,10 @@ package pbservice
 import "viewservice"
 import "net/rpc"
 import "fmt"
-
 import "crypto/rand"
 import "math/big"
 
+// import "time"
 
 type Clerk struct {
 	vs *viewservice.Clerk
@@ -24,12 +24,12 @@ func nrand() int64 {
 }
 
 func MakeClerk(vshost string, me string) *Clerk {
+	fmt.Println("")
 	ck := new(Clerk)
 	ck.vs = viewservice.MakeClerk(me, vshost)
 	// Your ck.* initializations here
 	ck.me = me
 	ck.primary = ck.vs.Primary()
-	fmt.Println(ck)
 	return ck
 }
 
@@ -109,6 +109,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	var finished bool
 	rand := nrand()
 	for !finished {
+		// time.Sleep(100 * time.Millisecond)
 		if ck.primary != "" {
 			args = &PutAppendArgs{Key: key, Value: value, Op: op, Id: rand}
 			reply = &PutAppendReply{}
@@ -120,6 +121,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 		if !finished {
 			ck.primary = ck.vs.Primary()
 		}
+		// fmt.Println("RETRYING", ck.primary, reply, key, value)
 	}
 	return reply.PreviousValue
 }

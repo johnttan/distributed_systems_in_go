@@ -232,16 +232,16 @@ func TestAtMostOnce(t *testing.T) {
 // Put right after a backup dies.
 func TestFailPut(t *testing.T) {
 	runtime.GOMAXPROCS(4)
-
+	fmt.Println("FAILPUT STARTING")
 	tag := "failput"
 	vshost := port(tag+"v", 1)
 	vs := viewservice.StartServer(vshost)
 	time.Sleep(time.Second)
 	vck := viewservice.MakeClerk("", vshost)
-
 	s1 := StartServer(vshost, port(tag, 1))
 	time.Sleep(time.Second)
 	s2 := StartServer(vshost, port(tag, 2))
+
 	time.Sleep(time.Second)
 	s3 := StartServer(vshost, port(tag, 3))
 
@@ -321,7 +321,6 @@ func TestFailPut(t *testing.T) {
 // i.e. that they processed the Put()s in the same order.
 func TestConcurrentSame(t *testing.T) {
 	runtime.GOMAXPROCS(4)
-
 	tag := "cs"
 	vshost := port(tag+"v", 1)
 	vs := viewservice.StartServer(vshost)
@@ -425,6 +424,7 @@ func checkAppends(t *testing.T, v string, counts []int) {
 			wanted := "x " + strconv.Itoa(i) + " " + strconv.Itoa(j) + " y"
 			off := strings.Index(v, wanted)
 			if off < 0 {
+				fmt.Println(v, "WANTED", wanted)
 				t.Fatalf("missing element in Append result")
 			}
 			off1 := strings.LastIndex(v, wanted)
@@ -443,6 +443,7 @@ func checkAppends(t *testing.T, v string, counts []int) {
 // then check that primary and backup have identical values.
 // i.e. that they processed the Append()s in the same order.
 func TestConcurrentSameAppend(t *testing.T) {
+	fmt.Println("STARTTESTCONCURRENTSAMEAPPEND")
 	runtime.GOMAXPROCS(4)
 
 	tag := "csa"

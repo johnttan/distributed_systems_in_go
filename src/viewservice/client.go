@@ -16,7 +16,7 @@ func MakeClerk(me string, server string) *Clerk {
 	ck := new(Clerk)
 	ck.me = me
 	ck.server = server
-	fmt.Println(ck)
+	fmt.Println("")
 	return ck
 }
 

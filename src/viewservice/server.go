@@ -9,7 +9,6 @@ import "fmt"
 import "os"
 import "sync/atomic"
 
-
 type Node struct {
 	id string
 	// Node.state
@@ -17,9 +16,9 @@ type Node struct {
 	// 1 = available but not backup/primary
 	// 2 = backup
 	// 3 = primary
-	state uint
+	state          uint
 	ticksSincePing uint
-	viewNum uint
+	viewNum        uint
 }
 
 type ViewServer struct {
@@ -39,8 +38,9 @@ type ViewServer struct {
 // server Ping RPC handler.
 //
 func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
-	vs.mu.Lock()
 	// New node logic.
+	vs.mu.Lock()
+	// fmt.Println("PING", vs.currentView, vs.nodes, vs.currentView.Primary, vs.currentView.Backup)
 	if vs.nodes[args.Me] == nil {
 		vs.nodes[args.Me] = new(Node)
 		vs.nodes[args.Me].state = 1
@@ -50,11 +50,13 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 		if vs.currentView.Primary == "" || vs.currentView.Backup == "" {
 			vs.newView()
 		}
-// Detected server that is behind/restarted
-	}else if vs.nodes[args.Me].viewNum > args.Viewnum {
+		// fmt.Println("FIRST PING", args, vs.currentView, vs.nodes, vs.currentView.Primary, vs.currentView.Backup)
+
+		// Detected server that is behind/restarted
+	} else if vs.nodes[args.Me].viewNum > args.Viewnum {
 		vs.nodes[args.Me].state = 1
 		// fmt.Println("DETECTED RESTARTED SERVER", args.Me, args.Viewnum)
-	}else{
+	} else {
 		// Reset ticks and viewNum
 		vs.nodes[args.Me].ticksSincePing = 0
 		vs.nodes[args.Me].viewNum = args.Viewnum
@@ -72,55 +74,55 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 // server Get() RPC handler.
 //
 func (vs *ViewServer) Get(args *GetArgs, reply *GetReply) error {
-	vs.mu.Lock()
 	// Your code here.
 	reply.View = *vs.currentView
 	// fmt.Println("CURRENT BACKUP", vs.currentView.Backup)
 	// fmt.Println("CURRENT PRIMARY", vs.currentView.Primary)
-	vs.mu.Unlock()
 	return nil
 }
 
 func (vs *ViewServer) newView() {
-	newView := new(View)
-	currentPrimary := vs.currentView.Primary
-	currentBackup := vs.currentView.Backup
-	// fmt.Println("CREATING NEW VIEW", vs.currentView.Backup, vs.currentView.Primary)
-	if currentPrimary != "" {
-		// fmt.Println("CURRENT PRIMARY IN NEWVIEW", vs.currentView.Primary, vs.nodes[vs.currentView.Primary].state, "BACKUP", vs.currentView.Backup)
-		if vs.nodes[vs.currentView.Primary].state > 1 {
-			newView.Primary = vs.currentView.Primary
-		}else if currentBackup != "" {
-			newView.Primary = vs.currentView.Backup
-			vs.nodes[vs.currentView.Backup].state = 3
-			currentBackup = ""
-		}
-	}
-	if currentBackup != "" {
-		if vs.nodes[vs.currentView.Backup].state > 1 {
-			newView.Backup = vs.currentView.Backup
-		}else {
-			newView.Backup = ""
-		}
-	}
-
-	newView.Viewnum = vs.currentView.Viewnum + 1
-	for _, node := range vs.nodes {
-		if node.state == 1 && newView.Primary == "" {
-			newView.Primary = node.id
-			node.state = 3
-		}
-		if node.state == 1 && newView.Backup == "" {
-			newView.Backup = node.id
-			node.state = 2
-		}
-		// fmt.Println("VIEWNUMS IN NEWVIEW", node.id, node.viewNum, vs.currentView.Viewnum)
-	}
-
-	if (vs.currentView.Primary != "" && vs.nodes[vs.currentView.Primary].viewNum < vs.currentView.Viewnum) {
+	// Don't create new view and mutate state if primary hasn't acked.
+	if vs.currentView.Primary != "" && vs.nodes[vs.currentView.Primary].viewNum < vs.currentView.Viewnum {
 		// fmt.Println("WAITING ON VIEW")
-	}else{
+	} else {
+		newView := new(View)
+		currentPrimary := vs.currentView.Primary
+		currentBackup := vs.currentView.Backup
+		// fmt.Println("CREATING NEW VIEW", vs.currentView.Backup, vs.currentView.Primary)
+		if currentPrimary != "" {
+			// fmt.Println("CURRENT PRIMARY IN NEWVIEW", vs.currentView.Primary, vs.nodes[vs.currentView.Primary].state, "BACKUP", vs.currentView.Backup)
+			if vs.nodes[vs.currentView.Primary].state > 1 {
+				newView.Primary = vs.currentView.Primary
+			} else if currentBackup != "" {
+				newView.Primary = vs.currentView.Backup
+				vs.nodes[vs.currentView.Backup].state = 3
+				currentBackup = ""
+			}
+		}
+		if currentBackup != "" {
+			if vs.nodes[vs.currentView.Backup].state > 1 {
+				newView.Backup = vs.currentView.Backup
+			} else {
+				newView.Backup = ""
+			}
+		}
+
+		newView.Viewnum = vs.currentView.Viewnum + 1
+		for _, node := range vs.nodes {
+			if node.state == 1 && newView.Primary == "" {
+				newView.Primary = node.id
+				node.state = 3
+			}
+			if node.state == 1 && newView.Backup == "" {
+				newView.Backup = node.id
+				node.state = 2
+			}
+			// fmt.Println("NODE", node, newView)
+			// fmt.Println("VIEWNUMS IN NEWVIEW", vs.nodes, node.id, node.viewNum, vs.currentView.Viewnum)
+		}
 		vs.currentView = newView
+		// fmt.Println("SET CURRENT VIEW", vs.currentView)
 	}
 
 	// fmt.Println("NEW PRIMARY", vs.currentView.Primary)
@@ -133,7 +135,6 @@ func (vs *ViewServer) newView() {
 // accordingly.
 //
 func (vs *ViewServer) tick() {
-	vs.mu.Lock()
 	for _, node := range vs.nodes {
 		node.ticksSincePing += 1
 		if node.ticksSincePing >= DeadPings {
@@ -151,10 +152,11 @@ func (vs *ViewServer) tick() {
 			// fmt.Println("DETECTED BACKUP FAILURE")
 			vs.newView()
 		}
-		if node.state == 0 && vs.currentView.Primary == node.id{
+		if node.state == 0 && vs.currentView.Primary == node.id {
 			// Checks that dead primary is synced. Cannot advanced to next view if not synced.
 			// Checks that backup node is initialized and synced
-			if vs.currentView.Viewnum == node.viewNum && vs.currentView.Viewnum == vs.nodes[vs.currentView.Backup].viewNum{
+			// fmt.Println("TICKING", vs.currentView, vs.nodes)
+			if vs.currentView.Backup != "" && vs.currentView.Viewnum == node.viewNum && vs.currentView.Viewnum == vs.nodes[vs.currentView.Backup].viewNum {
 				vs.currentView.Primary = vs.currentView.Backup
 				vs.nodes[vs.currentView.Primary].state = 3
 				vs.currentView.Backup = ""
@@ -171,7 +173,6 @@ func (vs *ViewServer) tick() {
 		// fmt.Println("LOOPING NODES", node.id, node.state)
 	}
 	// fmt.Println("IN TICK", vs.currentView.Backup, vs.currentView.Primary)
-	vs.mu.Unlock()
 }
 
 //
