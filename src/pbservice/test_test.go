@@ -232,7 +232,6 @@ func TestAtMostOnce(t *testing.T) {
 // Put right after a backup dies.
 func TestFailPut(t *testing.T) {
 	runtime.GOMAXPROCS(4)
-	fmt.Println("FAILPUT STARTING")
 	tag := "failput"
 	vshost := port(tag+"v", 1)
 	vs := viewservice.StartServer(vshost)
@@ -422,9 +421,9 @@ func checkAppends(t *testing.T, v string, counts []int) {
 		lastoff := -1
 		for j := 0; j < counts[i]; j++ {
 			wanted := "x " + strconv.Itoa(i) + " " + strconv.Itoa(j) + " y"
+
 			off := strings.Index(v, wanted)
 			if off < 0 {
-				fmt.Println(v, "WANTED", wanted)
 				t.Fatalf("missing element in Append result")
 			}
 			off1 := strings.LastIndex(v, wanted)

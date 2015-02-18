@@ -56,11 +56,11 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 		if args.Op == PUT {
 			pb.store[args.Key] = args.Value
 		} else if args.Op == APPEND {
-			// fmt.Println("APPEND", reply.PreviousValue, "previous", args.Id, args.Value, pb.uniqueIds[args.Id])
 			pb.store[args.Key] += args.Value
+			// fmt.Println("APPEND", args.Key, reply.PreviousValue, "previous", args.Id, "current", args.Value, pb.store[args.Key])
 		}
 		if pb.view.Backup != "" {
-			repArgs := &PutAppendArgs{Key: args.Key, Value: args.Value, Op: REPLICATE, Id: args.Id}
+			repArgs := &PutAppendArgs{Key: args.Key, Value: pb.store[args.Key], Op: REPLICATE, Id: args.Id}
 			repReply := &PutAppendReply{}
 			// BEGIN REPLICATING
 			call(pb.view.Backup, "PBServer.PutAppendReplicate", repArgs, repReply)
