@@ -34,5 +34,15 @@ type GetReply struct {
 	Value string
 }
 
+type ReplicateArgs struct {
+	Key string
+	Value string
+	Op string
+	Id int64
+}
 
+type ReplicateReply struct {
+	Err Err
+	PreviousValue string
+}
 // Your RPC definitions here.
