@@ -107,10 +107,10 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	var args *PutAppendArgs
 	var reply *PutAppendReply
 	var finished bool
-
+	rand := nrand()
 	for !finished {
 		if ck.primary != "" {
-			args = &PutAppendArgs{Key: key, Value: value, Op: op, Id: nrand()}
+			args = &PutAppendArgs{Key: key, Value: value, Op: op, Id: rand}
 			reply = &PutAppendReply{}
 			call(ck.primary, "PBServer.PutAppendReplicate", args, reply)
 			if reply.Err == OK {

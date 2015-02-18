@@ -39,10 +39,9 @@ type ViewServer struct {
 // server Ping RPC handler.
 //
 func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
-
+	vs.mu.Lock()
 	// New node logic.
 	if vs.nodes[args.Me] == nil {
-
 		vs.nodes[args.Me] = new(Node)
 		vs.nodes[args.Me].state = 1
 		vs.nodes[args.Me].viewNum = args.Viewnum
@@ -65,6 +64,7 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 
 	reply.View = *vs.currentView
 	// fmt.Println("PING VIEWNUM", args.Me, args.Viewnum, vs.nodes[args.Me].viewNum)
+	vs.mu.Unlock()
 	return nil
 }
 
@@ -72,11 +72,12 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 // server Get() RPC handler.
 //
 func (vs *ViewServer) Get(args *GetArgs, reply *GetReply) error {
-
+	vs.mu.Lock()
 	// Your code here.
 	reply.View = *vs.currentView
 	// fmt.Println("CURRENT BACKUP", vs.currentView.Backup)
 	// fmt.Println("CURRENT PRIMARY", vs.currentView.Primary)
+	vs.mu.Unlock()
 	return nil
 }
 
@@ -116,10 +117,6 @@ func (vs *ViewServer) newView() {
 		// fmt.Println("VIEWNUMS IN NEWVIEW", node.id, node.viewNum, vs.currentView.Viewnum)
 	}
 
-	if vs.currentView.Primary != "" {
-		// fmt.Println("PRIMARY VIEWNUM", vs.currentView.Primary, vs.nodes[vs.currentView.Primary].viewNum, vs.currentView.Viewnum)
-	}
-
 	if (vs.currentView.Primary != "" && vs.nodes[vs.currentView.Primary].viewNum < vs.currentView.Viewnum) {
 		// fmt.Println("WAITING ON VIEW")
 	}else{
@@ -128,7 +125,6 @@ func (vs *ViewServer) newView() {
 
 	// fmt.Println("NEW PRIMARY", vs.currentView.Primary)
 	// fmt.Println("NEW BACKUP", vs.currentView.Backup)
-
 }
 
 //
@@ -137,6 +133,7 @@ func (vs *ViewServer) newView() {
 // accordingly.
 //
 func (vs *ViewServer) tick() {
+	vs.mu.Lock()
 	for _, node := range vs.nodes {
 		node.ticksSincePing += 1
 		if node.ticksSincePing >= DeadPings {
@@ -174,7 +171,7 @@ func (vs *ViewServer) tick() {
 		// fmt.Println("LOOPING NODES", node.id, node.state)
 	}
 	// fmt.Println("IN TICK", vs.currentView.Backup, vs.currentView.Primary)
-	// Your code here.
+	vs.mu.Unlock()
 }
 
 //
@@ -183,6 +180,7 @@ func (vs *ViewServer) tick() {
 // please don't change this function.
 //
 func (vs *ViewServer) Kill() {
+	// fmt.Println("KILLING VS", vs.me)
 	vs.dead = true
 	vs.l.Close()
 }

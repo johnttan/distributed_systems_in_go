@@ -25,13 +25,12 @@ type PBServer struct {
 // 1 for backup
 // 2 for primary
 	state      uint
-	uniqueIds  map[int64]bool
+	uniqueIds  map[int64]*PutAppendReply
 	view       viewservice.View
 }
 
 
 func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
-
 	// Your code here.
 	if pb.state == 2 {
 		if pb.store[args.Key] == "" {
@@ -43,18 +42,19 @@ func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
 	} else {
 		reply.Err = ErrWrongServer
 	}
-
 	return nil
 }
 // This should most likely be broken up.
 func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendReply) error {
 	// fmt.Println(args)
 // Decide between puts, appends, and replicates.
-	if pb.state == 2 {
+	// fmt.Println("UNIQUE", args.Value, args.Id, pb.uniqueIds[args.Id])
+	if pb.state == 2 && pb.uniqueIds[args.Id] == nil {
 		reply.PreviousValue = pb.store[args.Key]
-		if args.Op == PUT && !pb.uniqueIds[args.Id] {
+		if args.Op == PUT {
 			pb.store[args.Key] = args.Value
 		} else if args.Op == APPEND {
+			// fmt.Println("APPEND", reply.PreviousValue, "previous", args.Id, args.Value, pb.uniqueIds[args.Id])
 			pb.store[args.Key] += args.Value
 		}
 		if pb.view.Backup != "" {
@@ -64,14 +64,12 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 			// BEGIN REPLICATING
 			call(pb.view.Backup, "PBServer.PutAppendReplicate", repArgs, repReply)
 			if repReply.Err == OK {
-				pb.uniqueIds[args.Id] = true
 				reply.Err = OK
 			}else {
 				// ERROR REPLICATING
 				reply.Err = ErrWrongServer
 			}
 		}else {
-			pb.uniqueIds[args.Id] = true
 			reply.Err = OK
 		}
 	} else if pb.state == 1 && args.Op == REPLICATE {
@@ -79,10 +77,13 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 		reply.PreviousValue = pb.store[args.Key]
 		pb.store[args.Key] = args.Value
 		reply.Err = OK
+	} else if pb.uniqueIds[args.Id] != nil {
+		reply.Err = pb.uniqueIds[args.Id].Err
+		reply.PreviousValue = pb.uniqueIds[args.Id].PreviousValue
 	} else {
 		reply.Err = ErrWrongServer
 	}
-
+	pb.uniqueIds[args.Id] = reply
 	return nil
 }
 
@@ -109,6 +110,7 @@ func (pb *PBServer) Restore(args *MigrationArgs, reply *MigrationReply) error{
 //   manage transfer of state from primary to new backup.
 //
 func (pb *PBServer) tick() {
+	pb.mu.Lock()
 	view, err := pb.vs.Ping(pb.viewNum)
 	if err == nil {
 		if view.Primary == pb.me {
@@ -126,12 +128,14 @@ func (pb *PBServer) tick() {
 		pb.viewNum = view.Viewnum
 		pb.view = view
 	}
+	pb.mu.Unlock()
 }
 
 // tell the server to shut itself down.
 // please do not change this function.
 func (pb *PBServer) kill() {
 	pb.dead = true
+	// fmt.Println("KILLING PB SERVER", pb)
 	pb.l.Close()
 }
 
@@ -142,9 +146,9 @@ func StartServer(vshost string, me string) *PBServer {
 	pb.vs = viewservice.MakeClerk(me, vshost)
 	// Your pb.* initializations here.
 
-	pb.viewNum = 0;
+	pb.viewNum = 0
 	pb.store = make(map[string]string)
-	pb.uniqueIds = make(map[int64]bool)
+	pb.uniqueIds = make(map[int64]*PutAppendReply)
 	pb.view = *new(viewservice.View)
 
 
