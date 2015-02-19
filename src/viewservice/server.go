@@ -42,7 +42,10 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 	vs.mu.Lock()
 	var node *Node
 	node = vs.nodes[args.Me]
-	if node == nil {
+
+	switch {
+
+	case node == nil:
 		node = new(Node)
 		vs.nodes[args.Me] = node
 		node.state = 1
@@ -52,10 +55,13 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 		if !vs.hasPrimary() || !vs.hasBackup() {
 			vs.newView()
 		}
-	} else if node.viewNum > args.Viewnum {
+		break
+	case node.viewNum > args.Viewnum:
 		node.state = 1
-	} else {
+		break
+	default:
 		node.viewNum = args.Viewnum
+		break
 	}
 
 	node.ticksSincePing = 0
@@ -73,7 +79,6 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 // server Get() RPC handler.
 //
 func (vs *ViewServer) Get(args *GetArgs, reply *GetReply) error {
-	// Your code here.
 	reply.View = *vs.view
 	return nil
 }
@@ -104,15 +109,19 @@ func (vs *ViewServer) newView() {
 
 		vs.view.Viewnum += 1
 		for _, node := range vs.nodes {
+			if node.state == 1 {
+				switch {
+				case !vs.hasPrimary():
+					vs.view.Primary = node.id
+					node.state = 3
+					break
+				case !vs.hasBackup():
+					vs.view.Backup = node.id
+					node.state = 2
+					break
+				}
+			}
 			node.ack = false
-			if node.state == 1 && !vs.hasPrimary() {
-				vs.view.Primary = node.id
-				node.state = 3
-			}
-			if node.state == 1 && !vs.hasBackup() {
-				vs.view.Backup = node.id
-				node.state = 2
-			}
 		}
 	}
 }
@@ -127,19 +136,12 @@ func (vs *ViewServer) tick() {
 		node.ticksSincePing += 1
 		if node.ticksSincePing >= DeadPings {
 			node.state = 0
-			if vs.view.Backup == node.id {
-				vs.view.Backup = ""
-				vs.newView()
-			}
-			if vs.view.Primary == node.id {
-				// Checks that dead primary is synced. Cannot advanced to next view if not synced.
+			if vs.view.Backup == node.id || vs.view.Primary == node.id {
 				vs.newView()
 			}
 		}
-		if node.state == 1 {
-			if !vs.hasBackup() || vs.view.Primary == node.id {
-				vs.newView()
-			}
+		if node.state == 1 && (!vs.hasBackup() || vs.view.Primary == node.id) {
+			vs.newView()
 		}
 	}
 }
