@@ -9,6 +9,7 @@ import "fmt"
 import "os"
 import "sync/atomic"
 
+// REFACTOR TO NOT KEEP STATE OF ALL NODES WHO HAVE PINGED. KEY REFACTORING TO REDUCE COMPLEXITY.
 type Node struct {
 	id string
 	// Node.state
