@@ -54,7 +54,6 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 		}
 	} else if node.viewNum > args.Viewnum {
 		node.state = 1
-		fmt.Println("DETECTED RESTARTED SERVER", args.Me, args.Viewnum)
 	} else {
 		node.viewNum = args.Viewnum
 	}

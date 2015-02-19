@@ -121,8 +121,8 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 		if !finished {
 			ck.primary = ck.vs.Primary()
 		}
-		if count > 10000 {
-			fmt.Println("RETRYING", ck.primary, key)
+		if count > 10000 && count%5000 == 0 {
+			// fmt.Println("RETRYING", ck.primary, key)
 			time.Sleep(100 * time.Millisecond)
 		}
 		count++

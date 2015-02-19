@@ -4,9 +4,9 @@ const (
 	OK             = "OK"
 	ErrNoKey       = "ErrNoKey"
 	ErrWrongServer = "ErrWrongServer"
-	PUT = "PUT"
-	APPEND = "APPEND"
-	REPLICATE = "REPLICATE"
+	PUT            = "PUT"
+	APPEND         = "APPEND"
+	REPLICATE      = "REPLICATE"
 )
 
 type Err string
@@ -22,7 +22,7 @@ type PutAppendArgs struct {
 type PutAppendReply struct {
 	Err           Err
 	PreviousValue string
-	Viewnum uint
+	Viewnum       uint
 }
 
 type GetArgs struct {
@@ -35,7 +35,8 @@ type GetReply struct {
 }
 
 type MigrationArgs struct {
-	Store map[string]string
+	Store     map[string]string
+	UniqueIds map[int64]*PutAppendReply
 }
 
 type MigrationReply struct {

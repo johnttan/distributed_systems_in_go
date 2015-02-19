@@ -424,8 +424,8 @@ func checkAppends(t *testing.T, v string, counts []int) {
 
 			off := strings.Index(v, wanted)
 			if off < 0 {
-				fmt.Println("GOT", v)
-				fmt.Println("WANTED", wanted)
+				// fmt.Println("GOT", v)
+				// fmt.Println("WANTED", wanted)
 				t.Fatalf("missing element in Append result")
 			}
 			off1 := strings.LastIndex(v, wanted)
@@ -444,7 +444,6 @@ func checkAppends(t *testing.T, v string, counts []int) {
 // then check that primary and backup have identical values.
 // i.e. that they processed the Append()s in the same order.
 func TestConcurrentSameAppend(t *testing.T) {
-	fmt.Println("STARTTESTCONCURRENTSAMEAPPEND")
 	runtime.GOMAXPROCS(4)
 
 	tag := "csa"
@@ -939,7 +938,7 @@ func proxy(t *testing.T, port string, delay *int) {
 
 func TestPartition1(t *testing.T) {
 	runtime.GOMAXPROCS(4)
-
+	fmt.Println("START TEST_PARTITION_1")
 	tag := "part1"
 	vshost := port(tag+"v", 1)
 	vs := viewservice.StartServer(vshost)
@@ -982,6 +981,7 @@ func TestPartition1(t *testing.T) {
 	stale_get := false
 	go func() {
 		x := ck1.Get("a")
+		fmt.Println("FINISHED GETTING FROM CK1")
 		if x == "1" {
 			stale_get = true
 		}
