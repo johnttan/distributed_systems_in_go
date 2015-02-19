@@ -42,6 +42,10 @@ func (pb *PBServer) isUnassigned() bool {
 	return !pb.isPrimary() && !pb.isBackup()
 }
 
+func (pb *PBServer) isCached(args *PutAppendArgs) bool {
+	return pb.uniqueIds[args.Id] != nil
+}
+
 func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
 	// Your code here.
 	if pb.isPrimary() && !pb.partitioned {
@@ -70,52 +74,46 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 
 	// If primary and not unique
 	switch {
-	case pb.isPrimary() && pb.uniqueIds[args.Id] == nil && args.Op != REPLICATE:
-		reply.PreviousValue = pb.store[args.Key]
-		switch args.Op {
-		case PUT:
-			temp = args.Value
-		case APPEND:
-			temp += args.Value
-		}
-		if pb.view.Backup != "" {
-			repArgs := &PutAppendArgs{Key: args.Key, Value: temp, Op: REPLICATE, Id: args.Id}
-			repReply := &PutAppendReply{}
-			// BEGIN REPLICATING
-			call(pb.view.Backup, "PBServer.PutAppendReplicate", repArgs, repReply)
-			if repReply.Err == ErrWrongServer {
-				reply.Err = ErrWrongServer
+	case !pb.isCached(args):
+		switch {
+		case pb.isPrimary() && args.Op != REPLICATE:
+			reply.PreviousValue = pb.store[args.Key]
+			switch args.Op {
+			case PUT:
+				temp = args.Value
+			case APPEND:
+				temp += args.Value
 			}
-		}
-		reply.Viewnum = pb.viewNum
-		if reply.Err == OK {
-			pb.uniqueIds[args.Id] = reply
-		}
-		break
-	case args.Op == REPLICATE:
-		if pb.isBackup() {
+			if pb.view.Backup != "" {
+				repArgs := &PutAppendArgs{Key: args.Key, Value: temp, Op: REPLICATE, Id: args.Id}
+				repReply := &PutAppendReply{}
+				// BEGIN REPLICATING
+				call(pb.view.Backup, "PBServer.PutAppendReplicate", repArgs, repReply)
+				reply.Err = repReply.Err
+			}
+			reply.Viewnum = pb.viewNum
+			if reply.Err == OK {
+				pb.uniqueIds[args.Id] = reply
+			}
+			break
+		case args.Op == REPLICATE && pb.isBackup():
 			reply.PreviousValue = pb.store[args.Key]
 			temp = args.Value
 			reply.Viewnum = pb.viewNum
-		} else {
+			pb.uniqueIds[args.Id] = reply
+			break
+		default:
 			reply.Err = ErrWrongServer
 		}
-		if reply.Err == OK {
-			pb.uniqueIds[args.Id] = reply
-		}
-		break
-	case pb.uniqueIds[args.Id] != nil: //Is cached
+	default:
 		reply.Err = pb.uniqueIds[args.Id].Err
 		reply.PreviousValue = pb.uniqueIds[args.Id].PreviousValue
-		break
-	default:
-		reply.Err = ErrWrongServer
 	}
 
 	switch {
 	case pb.partitioned:
 		reply.Err = ErrWrongServer
-	case reply.Err == OK: //Only cache if not an error. Caching errors causing weird bugs
+	case reply.Err == OK: //Only commit to store if OK
 		pb.store[args.Key] = temp
 	}
 
@@ -123,11 +121,11 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 	return nil
 }
 
-func (pb *PBServer) Migrate() {
+func (pb *PBServer) Migrate(backup string) {
 	if pb.isPrimary() {
 		args := &MigrationArgs{pb.store, pb.uniqueIds}
 		reply := &MigrationReply{}
-		call(pb.view.Backup, "PBServer.Restore", args, reply)
+		call(backup, "PBServer.Restore", args, reply)
 	}
 
 }
@@ -164,10 +162,8 @@ func (pb *PBServer) tick() {
 		pb.partitioned = true
 		pb.mu.Unlock()
 		return
-	case view.Viewnum != pb.viewNum:
-		pb.viewNum = view.Viewnum
-		pb.view = view
-		pb.Migrate()
+	case view.Backup != pb.view.Backup:
+		pb.Migrate(view.Backup)
 	}
 	pb.viewNum = view.Viewnum
 	pb.view = view
