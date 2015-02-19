@@ -61,6 +61,17 @@ func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
 	return nil
 }
 
+func (pb *PBServer) SendToBackup(key string, value string, id int64) Err {
+	repReply := &PutAppendReply{}
+	repReply.Err = OK
+	if pb.view.Backup != "" {
+		repArgs := &PutAppendArgs{Key: key, Value: value, Op: REPLICATE, Id: id}
+		// BEGIN REPLICATING
+		call(pb.view.Backup, "PBServer.PutAppendReplicate", repArgs, repReply)
+	}
+	return repReply.Err
+}
+
 // This should most likely be broken up.
 func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendReply) error {
 	pb.mu.Lock()
@@ -72,32 +83,25 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 	// Save temp before committing
 	temp := pb.store[args.Key]
 
+	reply.PreviousValue = pb.store[args.Key]
 	// If primary and not unique
 	switch {
 	case !pb.isCached(args):
 		switch {
-		case pb.isPrimary() && args.Op != REPLICATE:
-			reply.PreviousValue = pb.store[args.Key]
-			switch args.Op {
-			case PUT:
-				temp = args.Value
-			case APPEND:
-				temp += args.Value
-			}
-			if pb.view.Backup != "" {
-				repArgs := &PutAppendArgs{Key: args.Key, Value: temp, Op: REPLICATE, Id: args.Id}
-				repReply := &PutAppendReply{}
-				// BEGIN REPLICATING
-				call(pb.view.Backup, "PBServer.PutAppendReplicate", repArgs, repReply)
-				reply.Err = repReply.Err
-			}
+		case args.Op == PUT && pb.isPrimary():
+			temp = args.Value
+			reply.Err = pb.SendToBackup(args.Key, temp, args.Id)
+			reply.Viewnum = pb.viewNum
+			break
+		case args.Op == APPEND && pb.isPrimary():
+			temp += args.Value
+			reply.Err = pb.SendToBackup(args.Key, temp, args.Id)
 			reply.Viewnum = pb.viewNum
 			if reply.Err == OK {
 				pb.uniqueIds[args.Id] = reply
 			}
 			break
 		case args.Op == REPLICATE && pb.isBackup():
-			reply.PreviousValue = pb.store[args.Key]
 			temp = args.Value
 			reply.Viewnum = pb.viewNum
 			pb.uniqueIds[args.Id] = reply

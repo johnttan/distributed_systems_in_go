@@ -73,20 +73,16 @@ func (ck *Clerk) Get(key string) string {
 
 	// Your code here.
 
-	var args *GetArgs
 	var reply *GetReply
 	var finished bool
+	args := &GetArgs{key}
 
 	for !finished {
-		if ck.primary != "" {
-			args = &GetArgs{key}
-			reply = &GetReply{}
-			call(ck.primary, "PBServer.Get", args, reply)
-			if reply.Err == OK || reply.Err == ErrNoKey {
-				finished = true
-			}
-		}
-		if !finished {
+		reply = &GetReply{}
+		call(ck.primary, "PBServer.Get", args, reply)
+		if reply.Err == OK || reply.Err == ErrNoKey {
+			finished = true
+		} else {
 			ck.primary = ck.vs.Primary()
 		}
 	}
@@ -98,24 +94,18 @@ func (ck *Clerk) Get(key string) string {
 //
 func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	// Retry until success
-	var args *PutAppendArgs
 	var reply *PutAppendReply
 	var finished bool
-	count := 0
 	rand := nrand()
+	args := &PutAppendArgs{Key: key, Value: value, Op: op, Id: rand}
 	for !finished {
-		if ck.primary != "" {
-			args = &PutAppendArgs{Key: key, Value: value, Op: op, Id: rand}
-			reply = &PutAppendReply{}
-			call(ck.primary, "PBServer.PutAppendReplicate", args, reply)
-			if reply.Err == OK {
-				finished = true
-			}
-		}
-		if !finished {
+		reply = &PutAppendReply{}
+		call(ck.primary, "PBServer.PutAppendReplicate", args, reply)
+		if reply.Err == OK {
+			finished = true
+		} else {
 			ck.primary = ck.vs.Primary()
 		}
-		count++
 	}
 	return reply.PreviousValue
 }
