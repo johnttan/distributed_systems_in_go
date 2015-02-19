@@ -10,7 +10,6 @@ import "sync"
 import "os"
 import "syscall"
 import "math/rand"
-import "strings"
 
 type PBServer struct {
 	mu         sync.Mutex
@@ -66,9 +65,12 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 	if pb.uniqueIds[args.Id] != nil && pb.uniqueIds[args.Id].Viewnum != pb.viewNum {
 		pb.uniqueIds[args.Id] = nil
 	}
+	// Save temp before committing
 	temp := pb.store[args.Key]
+
 	// If primary and not unique
-	if pb.isPrimary() && pb.uniqueIds[args.Id] == nil {
+	switch {
+	case pb.isPrimary() && pb.uniqueIds[args.Id] == nil && args.Op != REPLICATE:
 		reply.PreviousValue = pb.store[args.Key]
 		switch args.Op {
 		case PUT:
@@ -89,8 +91,8 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 		if reply.Err == OK {
 			pb.uniqueIds[args.Id] = reply
 		}
-
-	} else if args.Op == REPLICATE {
+		break
+	case args.Op == REPLICATE:
 		if pb.isBackup() {
 			reply.PreviousValue = pb.store[args.Key]
 			temp = args.Value
@@ -101,19 +103,22 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 		if reply.Err == OK {
 			pb.uniqueIds[args.Id] = reply
 		}
-	} else if pb.uniqueIds[args.Id] != nil {
+		break
+	case pb.uniqueIds[args.Id] != nil: //Is cached
 		reply.Err = pb.uniqueIds[args.Id].Err
 		reply.PreviousValue = pb.uniqueIds[args.Id].PreviousValue
-	} else {
-		reply.Err = ErrWrongServer
-	}
-	if pb.partitioned {
+		break
+	default:
 		reply.Err = ErrWrongServer
 	}
 
-	if reply.Err == OK {
+	switch {
+	case pb.partitioned:
+		reply.Err = ErrWrongServer
+	case reply.Err == OK: //Only cache if not an error. Caching errors causing weird bugs
 		pb.store[args.Key] = temp
 	}
+
 	pb.mu.Unlock()
 	return nil
 }
@@ -153,20 +158,22 @@ func (pb *PBServer) tick() {
 	pb.mu.Lock()
 
 	view, err := pb.vs.Ping(pb.viewNum)
-	if err == nil {
-		if view.Backup != pb.view.Backup && pb.isPrimary() {
-			pb.viewNum = view.Viewnum
-			pb.view = view
-			pb.Migrate()
-		}
 
+	switch {
+	case err != nil:
+		pb.partitioned = true
+		pb.mu.Unlock()
+		return
+	case view.Viewnum != pb.viewNum:
 		pb.viewNum = view.Viewnum
 		pb.view = view
-		pb.partitioned = false
-	} else {
-		pb.partitioned = true
+		pb.Migrate()
 	}
+	pb.viewNum = view.Viewnum
+	pb.view = view
+	pb.partitioned = false
 	pb.mu.Unlock()
+
 }
 
 // tell the server to shut itself down.
@@ -177,7 +184,6 @@ func (pb *PBServer) kill() {
 }
 
 func StartServer(vshost string, me string) *PBServer {
-	fmt.Println("")
 	pb := new(PBServer)
 	pb.me = me
 	pb.vs = viewservice.MakeClerk(me, vshost)

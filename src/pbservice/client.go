@@ -2,11 +2,9 @@ package pbservice
 
 import "viewservice"
 import "net/rpc"
-import "fmt"
+
 import "crypto/rand"
 import "math/big"
-
-import "time"
 
 type Clerk struct {
 	vs *viewservice.Clerk
@@ -24,7 +22,6 @@ func nrand() int64 {
 }
 
 func MakeClerk(vshost string, me string) *Clerk {
-	fmt.Println("")
 	ck := new(Clerk)
 	ck.vs = viewservice.MakeClerk(me, vshost)
 	// Your ck.* initializations here
@@ -62,7 +59,6 @@ func call(srv string, rpcname string,
 		return true
 	}
 
-	// fmt.Println(err)
 	return false
 }
 
@@ -86,7 +82,6 @@ func (ck *Clerk) Get(key string) string {
 			args = &GetArgs{key}
 			reply = &GetReply{}
 			call(ck.primary, "PBServer.Get", args, reply)
-			// fmt.Println(ck.primary, reply)
 			if reply.Err == OK || reply.Err == ErrNoKey {
 				finished = true
 			}
@@ -102,14 +97,13 @@ func (ck *Clerk) Get(key string) string {
 // send a Put or Append RPC
 //
 func (ck *Clerk) PutAppend(key string, value string, op string) string {
-
+	// Retry until success
 	var args *PutAppendArgs
 	var reply *PutAppendReply
 	var finished bool
 	count := 0
 	rand := nrand()
 	for !finished {
-		// time.Sleep(100 * time.Millisecond)
 		if ck.primary != "" {
 			args = &PutAppendArgs{Key: key, Value: value, Op: op, Id: rand}
 			reply = &PutAppendReply{}
@@ -120,10 +114,6 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 		}
 		if !finished {
 			ck.primary = ck.vs.Primary()
-		}
-		if count > 10000 && count%5000 == 0 {
-			// fmt.Println("RETRYING", ck.primary, key)
-			time.Sleep(100 * time.Millisecond)
 		}
 		count++
 	}
