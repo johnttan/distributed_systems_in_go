@@ -32,7 +32,6 @@ type ViewServer struct {
 	view *View
 
 	nodes map[string]*Node
-	// Your declarations here.
 }
 
 //
