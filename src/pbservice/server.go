@@ -32,11 +32,15 @@ type PBServer struct {
 }
 
 func (pb *PBServer) isPrimary() bool {
-	return pb.state == 2
+	return pb.view.Primary == pb.me
 }
 
 func (pb *PBServer) isBackup() bool {
-	return pb.state == 1
+	return pb.view.Backup == pb.me
+}
+
+func (pb *PBServer) isUnassigned() bool {
+	return !pb.isPrimary() && !pb.isBackup()
 }
 
 func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
@@ -51,18 +55,13 @@ func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
 	} else {
 		reply.Err = ErrWrongServer
 	}
-	if strings.Index(pb.view.Primary, "part1") > -1 {
-		// fmt.Println("GET RECEIVED", args, pb.view, reply)
-	}
 	return nil
 }
 
 // This should most likely be broken up.
 func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendReply) error {
 	pb.mu.Lock()
-	// fmt.Println(args)
 	// Decide between puts, appends, and replicates.
-	// fmt.Println("UNIQUE", args.Value, args.Id, pb.uniqueIds[args.Id])
 	reply.Err = OK
 	if pb.uniqueIds[args.Id] != nil && pb.uniqueIds[args.Id].Viewnum != pb.viewNum {
 		pb.uniqueIds[args.Id] = nil
@@ -87,7 +86,6 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 			}
 		}
 		reply.Viewnum = pb.viewNum
-		// fmt.Println("SETTING CACHE", reply, pb.me, pb.view)
 		if reply.Err == OK {
 			pb.uniqueIds[args.Id] = reply
 		}
@@ -100,24 +98,15 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 		} else {
 			reply.Err = ErrWrongServer
 		}
-		// fmt.Println("SETTING CACHE", reply, pb.me, pb.view)
 		if reply.Err == OK {
 			pb.uniqueIds[args.Id] = reply
 		}
 	} else if pb.uniqueIds[args.Id] != nil {
 		reply.Err = pb.uniqueIds[args.Id].Err
 		reply.PreviousValue = pb.uniqueIds[args.Id].PreviousValue
-		if strings.Index(pb.view.Primary, "rc") > -1 {
-			// fmt.Println("SERVING CACHE", pb.uniqueIds[args.Id], "IN", pb.me, pb.view)
-		}
 	} else {
 		reply.Err = ErrWrongServer
-		reply.Viewnum = pb.viewNum
 	}
-	// if reply.Err == ErrWrongServer {
-	// 	fmt.Println(pb.state, pb.me, pb.vs, args)
-	// }
-	// COMMIT CHANGE
 	if pb.partitioned {
 		reply.Err = ErrWrongServer
 	}
@@ -140,7 +129,7 @@ func (pb *PBServer) Migrate() {
 
 func (pb *PBServer) Restore(args *MigrationArgs, reply *MigrationReply) error {
 	pb.mu.Lock()
-	if pb.state == 0 || pb.isBackup() {
+	if pb.isUnassigned() || pb.isBackup() {
 		reply.Err = OK
 		pb.store = args.Store
 		pb.uniqueIds = args.UniqueIds
@@ -150,8 +139,6 @@ func (pb *PBServer) Restore(args *MigrationArgs, reply *MigrationReply) error {
 			}
 		}
 	}
-	// fmt.Println("RESTORED", pb.view, pb.me, pb.store)
-	fmt.Println("")
 	pb.mu.Unlock()
 	return nil
 }
@@ -165,22 +152,9 @@ func (pb *PBServer) Restore(args *MigrationArgs, reply *MigrationReply) error {
 func (pb *PBServer) tick() {
 	pb.mu.Lock()
 
-	if strings.Index(pb.view.Primary, "part1") > -1 {
-		// fmt.Println("BEFORETICK", pb.view, pb.me)
-	}
 	view, err := pb.vs.Ping(pb.viewNum)
-	if strings.Index(pb.view.Primary, "part1") > -1 {
-		// fmt.Println("AFTER PING", view, "ERR", err, pb.me)
-	}
 	if err == nil {
-		if view.Primary == pb.me {
-			pb.state = 2
-		} else if view.Backup == pb.me {
-			pb.state = 1
-		}
-
-		if view.Backup != pb.view.Backup {
-			// fmt.Println("MIGRATING", view, pb.view, pb.me)
+		if view.Backup != pb.view.Backup && pb.isPrimary() {
 			pb.viewNum = view.Viewnum
 			pb.view = view
 			pb.Migrate()
@@ -188,14 +162,9 @@ func (pb *PBServer) tick() {
 
 		pb.viewNum = view.Viewnum
 		pb.view = view
-		// fmt.Println("CURRENT VIEW IN PB", pb.viewNum, pb.view, pb.me, "RECEIVEDVIEW", view)
 		pb.partitioned = false
 	} else {
-		fmt.Println("PARTITIONED", pb.me)
 		pb.partitioned = true
-	}
-	if strings.Index(view.Primary, "part1") > -1 {
-		// fmt.Println("AFTERTICK", pb.view, pb.me)
 	}
 	pb.mu.Unlock()
 }
@@ -208,6 +177,7 @@ func (pb *PBServer) kill() {
 }
 
 func StartServer(vshost string, me string) *PBServer {
+	fmt.Println("")
 	pb := new(PBServer)
 	pb.me = me
 	pb.vs = viewservice.MakeClerk(me, vshost)

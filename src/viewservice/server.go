@@ -134,7 +134,6 @@ func (vs *ViewServer) tick() {
 			if vs.view.Primary == node.id && vs.hasBackup() && node.ack && vs.nodes[vs.view.Backup].ack {
 				// Checks that dead primary is synced. Cannot advanced to next view if not synced.
 				// Checks that backup node is initialized and synced
-				// fmt.Println("PROMOTED", vs.view.Primary)
 				vs.newView()
 			}
 		}
@@ -154,7 +153,6 @@ func (vs *ViewServer) tick() {
 // please don't change this function.
 //
 func (vs *ViewServer) Kill() {
-	// fmt.Println("KILLING VS", vs.me)
 	vs.dead = true
 	vs.l.Close()
 }
