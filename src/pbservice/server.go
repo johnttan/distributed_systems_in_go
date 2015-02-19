@@ -75,8 +75,8 @@ func (pb *PBServer) SendToBackup(key string, value string, id int64) Err {
 // This should most likely be broken up.
 func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendReply) error {
 	pb.mu.Lock()
-	// Decide between puts, appends, and replicates.
 	reply.Err = OK
+	// Invalidate cache if viewnum has changed.
 	if pb.uniqueIds[args.Id] != nil && pb.uniqueIds[args.Id].Viewnum != pb.viewNum {
 		pb.uniqueIds[args.Id] = nil
 	}
@@ -84,7 +84,7 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 	temp := pb.store[args.Key]
 
 	reply.PreviousValue = pb.store[args.Key]
-	// If primary and not unique
+	// Decide between puts, appends, and replicates.
 	switch {
 	case !pb.isCached(args):
 		switch {
