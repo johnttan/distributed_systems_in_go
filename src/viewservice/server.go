@@ -131,18 +131,15 @@ func (vs *ViewServer) tick() {
 				vs.view.Backup = ""
 				vs.newView()
 			}
-			if vs.view.Primary == node.id && vs.hasBackup() && node.ack && vs.nodes[vs.view.Backup].ack {
+			if vs.view.Primary == node.id && vs.hasBackup() {
 				// Checks that dead primary is synced. Cannot advanced to next view if not synced.
-				// Checks that backup node is initialized and synced
 				vs.newView()
 			}
 		}
-
-		if node.state == 1 && vs.view.Primary == node.id && node.ack {
-			vs.newView()
-		}
-		if node.state == 1 && !vs.hasBackup() {
-			vs.newView()
+		if node.state == 1 {
+			if !vs.hasBackup() || vs.view.Primary == node.id {
+				vs.newView()
+			}
 		}
 	}
 }
