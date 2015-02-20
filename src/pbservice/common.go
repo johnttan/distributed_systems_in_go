@@ -14,10 +14,12 @@ type Err string
 
 // Put or Append
 type PutAppendArgs struct {
-	Key   string
-	Value string
-	Op    string
-	Id    int64
+	Key       string
+	Value     string
+	Op        string
+	Id        int64
+	Store     map[string]string
+	UniqueIds map[int64]*PutAppendReply
 }
 
 type PutAppendReply struct {
@@ -33,24 +35,4 @@ type GetArgs struct {
 type GetReply struct {
 	Err   Err
 	Value string
-}
-
-type MigrationArgs struct {
-	Store     map[string]string
-	UniqueIds map[int64]*PutAppendReply
-}
-
-type MigrationReply struct {
-	Err Err
-}
-
-type ReplicateArgs struct {
-	Key   string
-	Value string
-	Op    string
-	Id    int64
-}
-
-type ReplicateReply struct {
-	Err Err
 }

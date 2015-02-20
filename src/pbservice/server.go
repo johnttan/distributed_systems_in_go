@@ -62,8 +62,8 @@ func (pb *PBServer) CheckGet(args *GetArgs, reply *GetReply) error {
 
 func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
 	pb.mu.Lock()
+	reply.Err = ErrWrongServer
 	if pb.partitioned || !pb.isPrimary() {
-		reply.Err = ErrWrongServer
 		pb.mu.Unlock()
 		return errors.New("Partitioned")
 	}
@@ -82,26 +82,26 @@ func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
 		}
 		pb.mu.Unlock()
 		return nil
-	} else {
-		reply.Err = ErrWrongServer
-		pb.mu.Unlock()
-		return errors.New("NOT PRIMARY")
 	}
+	pb.mu.Unlock()
+	return errors.New("NOT PRIMARY")
 }
 
 func (pb *PBServer) Replicate(args *PutAppendArgs, reply *PutAppendReply) error {
 	pb.mu.Lock()
 	reply.Err = OK
-	switch {
-	case args.Op == APPEND && pb.isBackup():
-		pb.store[args.Key] += args.Value
+	if pb.isBackup() || pb.isUnassigned() {
+		for key, val := range args.Store {
+			pb.store[key] = val
+		}
+		if args.UniqueIds != nil {
+			for key, val := range args.UniqueIds {
+				pb.uniqueIds[key] = val
+			}
+		}
 		pb.mu.Unlock()
 		return nil
-	case args.Op == PUT && pb.isBackup():
-		pb.store[args.Key] = args.Value
-		pb.mu.Unlock()
-		return nil
-	default:
+	} else {
 		reply.Err = ErrWrongServer
 		pb.mu.Unlock()
 		return errors.New("NOT REPLICATING")
@@ -109,7 +109,7 @@ func (pb *PBServer) Replicate(args *PutAppendArgs, reply *PutAppendReply) error 
 }
 
 // This should most likely be broken up.
-func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendReply) error {
+func (pb *PBServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	pb.mu.Lock()
 	if pb.partitioned || !pb.isPrimary() {
 		pb.mu.Unlock()
@@ -133,6 +133,8 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 		temp += args.Value
 	}
 	if pb.hasBackup() {
+		args.Store = make(map[string]string)
+		args.Store[args.Key] = temp
 		success = call(pb.view.Backup, "PBServer.Replicate", args, reply)
 	}
 
@@ -152,24 +154,9 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 }
 
 func (pb *PBServer) Migrate(backup string) bool {
-	args := &MigrationArgs{pb.store, pb.uniqueIds}
-	reply := &MigrationReply{}
-	return call(backup, "PBServer.Restore", args, reply)
-}
-
-func (pb *PBServer) Restore(args *MigrationArgs, reply *MigrationReply) error {
-	pb.mu.Lock()
-	if pb.isUnassigned() || pb.isBackup() {
-		reply.Err = OK
-		for key, val := range args.Store {
-			pb.store[key] = val
-		}
-		for key, val := range args.UniqueIds {
-			pb.uniqueIds[key] = val
-		}
-	}
-	pb.mu.Unlock()
-	return nil
+	args := &PutAppendArgs{Store: pb.store, UniqueIds: pb.uniqueIds}
+	reply := &PutAppendReply{}
+	return call(backup, "PBServer.Replicate", args, reply)
 }
 
 //

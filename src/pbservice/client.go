@@ -101,7 +101,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	args := &PutAppendArgs{Key: key, Value: value, Op: op, Id: rand}
 	for !finished {
 		reply = &PutAppendReply{}
-		success := call(ck.primary, "PBServer.PutAppendReplicate", args, reply)
+		success := call(ck.primary, "PBServer.PutAppend", args, reply)
 		if success {
 			finished = true
 		} else {
