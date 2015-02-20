@@ -43,3 +43,14 @@ type MigrationArgs struct {
 type MigrationReply struct {
 	Err Err
 }
+
+type ReplicateArgs struct {
+	Key   string
+	Value string
+	Op    string
+	Id    int64
+}
+
+type ReplicateReply struct {
+	Err Err
+}

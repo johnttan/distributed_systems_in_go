@@ -48,33 +48,64 @@ func (pb *PBServer) isCached(args *PutAppendArgs) bool {
 	return pb.uniqueIds[args.Id] != nil
 }
 
-func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
-	// Your code here.
-	if pb.isPrimary() && !pb.partitioned {
-		if pb.store[args.Key] == "" {
-			reply.Err = ErrNoKey
-		} else {
-			reply.Err = OK
-			reply.Value = pb.store[args.Key]
-		}
-	} else {
+func (pb *PBServer) CheckGet(args *GetArgs, reply *GetReply) error {
+	if pb.isPrimary() {
 		reply.Err = ErrWrongServer
+		return errors.New("I'm primary")
 	}
 	return nil
 }
 
-func (pb *PBServer) SendToBackup(key string, value string, id int64, op string) Err {
-	repReply := &PutAppendReply{}
-	repReply.Err = OK
-	if pb.view.Backup != "" {
-		repArgs := &PutAppendArgs{Key: key, Value: value, Op: op, Id: id}
-		// BEGIN REPLICATING
-		res := call(pb.view.Backup, "PBServer.PutAppendReplicate", repArgs, repReply)
-		if !res {
-			repReply.Err = ErrWrongServer
-		}
+func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
+	// Your code here.
+	res := true
+	if pb.isPrimary() && pb.view.Backup != "" {
+		checkArgs := &GetArgs{}
+		checkReply := &GetReply{}
+		res = call(pb.view.Backup, "PBServer.CheckGet", checkArgs, checkReply)
 	}
-	return repReply.Err
+	if res && pb.isPrimary() && !pb.partitioned {
+		if pb.store[args.Key] == "" {
+			reply.Err = ErrNoKey
+			return errors.New("NO KEY")
+		} else {
+			reply.Err = OK
+			reply.Value = pb.store[args.Key]
+			return nil
+		}
+	} else {
+		reply.Err = ErrWrongServer
+		return errors.New("NOT PRIMARY")
+	}
+}
+
+func (pb *PBServer) SendToBackup(key string, value string, id int64, op string) bool {
+	repReply := &ReplicateReply{}
+	if pb.view.Backup != "" {
+		repArgs := &ReplicateArgs{Key: key, Value: value, Op: op, Id: id}
+		return call(pb.view.Backup, "PBServer.Replicate", repArgs, repReply)
+	} else {
+		return true
+	}
+}
+
+func (pb *PBServer) Replicate(args *ReplicateArgs, reply *ReplicateReply) error {
+	pb.mu.Lock()
+	reply.Err = OK
+	switch {
+	case args.Op == APPEND && pb.isBackup():
+		pb.store[args.Key] += args.Value
+		pb.mu.Unlock()
+		return nil
+	case args.Op == PUT && pb.isBackup():
+		pb.store[args.Key] = args.Value
+		pb.mu.Unlock()
+		return nil
+	default:
+		reply.Err = ErrWrongServer
+		pb.mu.Unlock()
+		return errors.New("NOT REPLICATING")
+	}
 }
 
 // This should most likely be broken up.
@@ -83,7 +114,6 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 	reply.Err = OK
 	// Save temp before committing
 	temp := pb.store[args.Key]
-
 	reply.PreviousValue = pb.store[args.Key]
 	// Decide between puts, appends, and replicates.
 	switch {
@@ -91,31 +121,19 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 		switch {
 		case args.Op == PUT && pb.isPrimary():
 			temp = args.Value
-			reply.Err = pb.SendToBackup(args.Key, temp, args.Id, REPLICATEPUT)
-			reply.Viewnum = pb.viewNum
-			if reply.Err == OK {
-				pb.uniqueIds[args.Id] = reply
+			res := pb.SendToBackup(args.Key, temp, args.Id, PUT)
+			if !res {
+				reply.Err = ErrWrongServer
 			}
+			reply.Viewnum = pb.viewNum
 			break
 		case args.Op == APPEND && pb.isPrimary():
 			temp += args.Value
-			reply.Err = pb.SendToBackup(args.Key, args.Value, args.Id, REPLICATEAPPEND)
-			reply.Viewnum = pb.viewNum
-			if reply.Err == OK {
-				pb.uniqueIds[args.Id] = reply
+			res := pb.SendToBackup(args.Key, args.Value, args.Id, APPEND)
+			if !res {
+				reply.Err = ErrWrongServer
 			}
-			break
-		case args.Op == REPLICATEPUT && pb.isBackup():
-			// fmt.Println("REPLICATEPUT", args, pb.view, pb.me)
-			temp = args.Value
 			reply.Viewnum = pb.viewNum
-			pb.uniqueIds[args.Id] = reply
-			break
-		case args.Op == REPLICATEAPPEND && pb.isBackup():
-			// fmt.Println("REPLICATEAPPEND", args, pb.view, pb.me)
-			temp += args.Value
-			reply.Viewnum = pb.viewNum
-			pb.uniqueIds[args.Id] = reply
 			break
 		default:
 			reply.Err = ErrWrongServer
@@ -136,30 +154,32 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 	case reply.Err == OK: //Only commit to store if OK
 		// fmt.Println("COMMITTING", temp, args, pb.me, pb.view)
 		pb.store[args.Key] = temp
+		pb.uniqueIds[args.Id] = reply
 		pb.mu.Unlock()
 		return nil
+	default:
+		pb.mu.Unlock()
+		return errors.New("No matching operation")
 	}
-
-	pb.mu.Unlock()
-	return errors.New("No matching operation")
 }
 
 func (pb *PBServer) Migrate(backup string) bool {
-	if pb.isPrimary() {
-		args := &MigrationArgs{pb.store, pb.uniqueIds}
-		reply := &MigrationReply{}
-		res := call(backup, "PBServer.Restore", args, reply)
-		return res
-	}
-	return true
+	args := &MigrationArgs{pb.store, pb.uniqueIds}
+	reply := &MigrationReply{}
+	res := call(backup, "PBServer.Restore", args, reply)
+	return res
 }
 
 func (pb *PBServer) Restore(args *MigrationArgs, reply *MigrationReply) error {
 	pb.mu.Lock()
 	if pb.isUnassigned() || pb.isBackup() {
 		reply.Err = OK
-		pb.store = args.Store
-		pb.uniqueIds = args.UniqueIds
+		for key, val := range args.Store {
+			pb.store[key] = val
+		}
+		for key, val := range args.UniqueIds {
+			pb.uniqueIds[key] = val
+		}
 	}
 	pb.mu.Unlock()
 	return nil
@@ -181,14 +201,17 @@ func (pb *PBServer) tick() {
 		pb.partitioned = true
 		pb.mu.Unlock()
 		return
-	case view.Backup != pb.view.Backup || pb.migrate:
+	case (view.Backup != pb.view.Backup || pb.migrate) && pb.isPrimary():
 		res := pb.Migrate(view.Backup)
-		// If migration failed, retry migrate.
+		// If migration failed due to unreliable connection, retry migrate on next tick.
 		if !res {
 			pb.migrate = true
 		} else {
 			pb.migrate = false
 		}
+	case pb.isPrimary() && view.Primary != pb.me:
+		// Changed from primary to backup. Have to invalidate cache, otherwise will respond to client requests
+		pb.uniqueIds = make(map[int64]*PutAppendReply)
 	}
 	pb.viewNum = view.Viewnum
 	pb.view = view

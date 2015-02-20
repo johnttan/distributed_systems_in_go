@@ -80,8 +80,8 @@ func (ck *Clerk) Get(key string) string {
 
 	for !finished {
 		reply = &GetReply{}
-		call(ck.primary, "PBServer.Get", args, reply)
-		if reply.Err == OK || reply.Err == ErrNoKey {
+		success := call(ck.primary, "PBServer.Get", args, reply)
+		if success {
 			finished = true
 		} else {
 			ck.primary = ck.vs.Primary()
