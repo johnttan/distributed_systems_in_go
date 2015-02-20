@@ -10,6 +10,7 @@ import "sync"
 import "os"
 import "syscall"
 import "math/rand"
+import "errors"
 
 type PBServer struct {
 	mu         sync.Mutex
@@ -128,6 +129,8 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 	switch {
 	case pb.partitioned:
 		reply.Err = ErrWrongServer
+		pb.mu.Unlock()
+		return errors.New("Partitioned")
 	case reply.Err == OK: //Only commit to store if OK
 		// fmt.Println("COMMITTING", temp, args, pb.me, pb.view)
 		pb.store[args.Key] = temp

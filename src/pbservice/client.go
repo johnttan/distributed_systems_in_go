@@ -6,6 +6,8 @@ import "net/rpc"
 import "crypto/rand"
 import "math/big"
 
+// import "fmt"
+
 type Clerk struct {
 	vs *viewservice.Clerk
 	// Your declarations here
@@ -53,7 +55,6 @@ func call(srv string, rpcname string,
 		return false
 	}
 	defer c.Close()
-
 	err := c.Call(rpcname, args, reply)
 	if err == nil {
 		return true
@@ -100,8 +101,8 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	args := &PutAppendArgs{Key: key, Value: value, Op: op, Id: rand}
 	for !finished {
 		reply = &PutAppendReply{}
-		call(ck.primary, "PBServer.PutAppendReplicate", args, reply)
-		if reply.Err == OK {
+		success := call(ck.primary, "PBServer.PutAppendReplicate", args, reply)
+		if success {
 			finished = true
 		} else {
 			ck.primary = ck.vs.Primary()
