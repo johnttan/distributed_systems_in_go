@@ -179,7 +179,6 @@ func (pb *PBServer) tick() {
 		res := pb.Migrate(view.Backup)
 		// If migration failed due to unreliable connection, retry migrate on next tick.
 		if !res {
-			fmt.Println("MIGRATION FAILED")
 			pb.migrate = true
 		} else {
 			pb.migrate = false
