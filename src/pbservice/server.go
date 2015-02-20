@@ -79,17 +79,7 @@ func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
 	}
 }
 
-func (pb *PBServer) SendToBackup(key string, value string, id int64, op string) bool {
-	repReply := &ReplicateReply{}
-	if pb.view.Backup != "" {
-		repArgs := &ReplicateArgs{Key: key, Value: value, Op: op, Id: id}
-		return call(pb.view.Backup, "PBServer.Replicate", repArgs, repReply)
-	} else {
-		return true
-	}
-}
-
-func (pb *PBServer) Replicate(args *ReplicateArgs, reply *ReplicateReply) error {
+func (pb *PBServer) Replicate(args *PutAppendArgs, reply *PutAppendReply) error {
 	pb.mu.Lock()
 	reply.Err = OK
 	switch {
@@ -121,17 +111,15 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 		switch {
 		case args.Op == PUT && pb.isPrimary():
 			temp = args.Value
-			res := pb.SendToBackup(args.Key, temp, args.Id, PUT)
-			if !res {
-				reply.Err = ErrWrongServer
+			if pb.view.Backup != "" {
+				res := call(pb.view.Backup, "PBServer.Replicate", args, reply)
 			}
 			reply.Viewnum = pb.viewNum
 			break
 		case args.Op == APPEND && pb.isPrimary():
 			temp += args.Value
-			res := pb.SendToBackup(args.Key, args.Value, args.Id, APPEND)
-			if !res {
-				reply.Err = ErrWrongServer
+			if pb.view.Backup != "" {
+				res := call(pb.view.Backup, "PBServer.Replicate", args, reply)
 			}
 			reply.Viewnum = pb.viewNum
 			break
