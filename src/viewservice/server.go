@@ -9,20 +9,6 @@ import "fmt"
 import "os"
 import "sync/atomic"
 
-// REFACTOR TO NOT KEEP STATE OF ALL NODES WHO HAVE PINGED. KEY REFACTORING TO REDUCE COMPLEXITY.
-type Node struct {
-	id string
-	// Node.state
-	// 0 = dead
-	// 1 = available but not backup/primary
-	// 2 = backup
-	// 3 = primary
-	state          uint
-	ticksSincePing uint
-	viewNum        uint
-	ack            bool
-}
-
 type ViewServer struct {
 	mu       sync.Mutex
 	l        net.Listener
@@ -30,9 +16,20 @@ type ViewServer struct {
 	rpccount int32 // for testing
 	me       string
 
-	view *View
+	view         *View
+	primaryAck   uint
+	backupAck    uint
+	primaryTicks uint
+	backupTicks  uint
+}
 
-	nodes map[string]*Node
+func (vs *ViewServer) Promote() {
+	vs.view.Primary = vs.view.Backup
+	vs.primaryAck = vs.backupAck
+	vs.backupAck = 0
+	vs.view.Viewnum++
+	vs.view.Backup = ""
+	vs.primaryTicks = vs.backupTicks
 }
 
 //
@@ -40,37 +37,27 @@ type ViewServer struct {
 //
 func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 	vs.mu.Lock()
-	var node *Node
-	node = vs.nodes[args.Me]
-
-	switch {
-
-	case node == nil:
-		node = new(Node)
-		vs.nodes[args.Me] = node
-		node.state = 1
-		node.viewNum = args.Viewnum
-		node.id = args.Me
-
-		if !vs.hasPrimary() || !vs.hasBackup() {
-			vs.newView()
-		}
-		break
-	case node.viewNum > args.Viewnum:
-		node.state = 1
-		break
-	default:
-		node.viewNum = args.Viewnum
-		break
+	if args.Viewnum < vs.primaryAck && vs.view.Primary == args.Me {
+		vs.Promote()
+	}
+	if vs.view.Primary == args.Me {
+		vs.primaryAck = args.Viewnum
+		vs.primaryTicks = 0
+	} else if vs.view.Backup == args.Me {
+		vs.backupAck = args.Viewnum
+		vs.backupTicks = 0
 	}
 
-	node.ticksSincePing = 0
-
+	if !vs.hasPrimary() && vs.eligibleForNewView() {
+		vs.view.Primary = args.Me
+		vs.primaryAck = args.Viewnum
+		vs.view.Viewnum++
+	} else if !vs.hasBackup() && vs.eligibleForNewView() && vs.view.Primary != args.Me {
+		vs.view.Backup = args.Me
+		vs.backupAck = args.Viewnum
+		vs.view.Viewnum++
+	}
 	reply.View = *vs.view
-
-	if node.viewNum == vs.view.Viewnum {
-		node.ack = true
-	}
 	vs.mu.Unlock()
 	return nil
 }
@@ -92,38 +79,7 @@ func (vs *ViewServer) hasBackup() bool {
 }
 
 func (vs *ViewServer) eligibleForNewView() bool {
-	return !(vs.hasPrimary() && !vs.nodes[vs.view.Primary].ack)
-}
-
-func (vs *ViewServer) newView() {
-	// Don't create new view and mutate state if primary hasn't acked.
-	if vs.eligibleForNewView() {
-		if vs.hasPrimary() && vs.nodes[vs.view.Primary].state <= 1 && vs.hasBackup() {
-			vs.view.Primary = vs.view.Backup
-			vs.nodes[vs.view.Backup].state = 3
-			vs.view.Backup = ""
-		}
-		if vs.hasBackup() && vs.nodes[vs.view.Backup].state <= 1 {
-			vs.view.Backup = ""
-		}
-
-		vs.view.Viewnum += 1
-		for _, node := range vs.nodes {
-			if node.state == 1 {
-				switch {
-				case !vs.hasPrimary():
-					vs.view.Primary = node.id
-					node.state = 3
-					break
-				case !vs.hasBackup():
-					vs.view.Backup = node.id
-					node.state = 2
-					break
-				}
-			}
-			node.ack = false
-		}
-	}
+	return vs.primaryAck == vs.view.Viewnum
 }
 
 //
@@ -132,18 +88,23 @@ func (vs *ViewServer) newView() {
 // accordingly.
 //
 func (vs *ViewServer) tick() {
-	for _, node := range vs.nodes {
-		node.ticksSincePing += 1
-		if node.ticksSincePing >= DeadPings {
-			node.state = 0
-			if vs.view.Backup == node.id || vs.view.Primary == node.id {
-				vs.newView()
-			}
-		}
-		if node.state == 1 && (!vs.hasBackup() || vs.view.Primary == node.id) {
-			vs.newView()
-		}
+	vs.mu.Lock()
+	if vs.hasBackup() {
+		vs.backupTicks += 1
 	}
+	if vs.hasPrimary() {
+		vs.primaryTicks += 1
+	}
+	if vs.backupTicks >= DeadPings && vs.eligibleForNewView() {
+		vs.view.Backup = ""
+		vs.backupTicks = 0
+		vs.view.Viewnum++
+	}
+	if (vs.primaryTicks >= DeadPings || !vs.hasPrimary()) && vs.hasBackup() && vs.eligibleForNewView() {
+		vs.Promote()
+		vs.backupTicks = 0
+	}
+	vs.mu.Unlock()
 }
 
 //
@@ -165,7 +126,6 @@ func StartServer(me string) *ViewServer {
 	vs := new(ViewServer)
 	vs.me = me
 	// Your vs.* initializations here.
-	vs.nodes = make(map[string]*Node)
 	vs.view = new(View)
 	// tell net/rpc about our RPC server and handlers.
 	rpcs := rpc.NewServer()
