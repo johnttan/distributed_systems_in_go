@@ -124,6 +124,8 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 	default:
 		reply.Err = pb.uniqueIds[args.Id].Err
 		reply.PreviousValue = pb.uniqueIds[args.Id].PreviousValue
+		pb.mu.Unlock()
+		return nil
 	}
 
 	switch {
@@ -134,12 +136,12 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 	case reply.Err == OK: //Only commit to store if OK
 		// fmt.Println("COMMITTING", temp, args, pb.me, pb.view)
 		pb.store[args.Key] = temp
-	default:
-		// fmt.Println("ERROR<CANNOTCOMMIT", temp, args, pb.me, pb.view)
+		pb.mu.Unlock()
+		return nil
 	}
 
 	pb.mu.Unlock()
-	return nil
+	return errors.New("No matching operation")
 }
 
 func (pb *PBServer) Migrate(backup string) bool {
