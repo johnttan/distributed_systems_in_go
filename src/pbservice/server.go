@@ -28,6 +28,7 @@ type PBServer struct {
 	uniqueIds   map[int64]*PutAppendReply
 	view        viewservice.View
 	partitioned bool
+	migrate     bool
 }
 
 func (pb *PBServer) isPrimary() bool {
@@ -61,13 +62,16 @@ func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
 	return nil
 }
 
-func (pb *PBServer) SendToBackup(key string, value string, id int64) Err {
+func (pb *PBServer) SendToBackup(key string, value string, id int64, op string) Err {
 	repReply := &PutAppendReply{}
 	repReply.Err = OK
 	if pb.view.Backup != "" {
-		repArgs := &PutAppendArgs{Key: key, Value: value, Op: REPLICATE, Id: id}
+		repArgs := &PutAppendArgs{Key: key, Value: value, Op: op, Id: id}
 		// BEGIN REPLICATING
-		call(pb.view.Backup, "PBServer.PutAppendReplicate", repArgs, repReply)
+		res := call(pb.view.Backup, "PBServer.PutAppendReplicate", repArgs, repReply)
+		if !res {
+			repReply.Err = ErrWrongServer
+		}
 	}
 	return repReply.Err
 }
@@ -90,25 +94,36 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 		switch {
 		case args.Op == PUT && pb.isPrimary():
 			temp = args.Value
-			reply.Err = pb.SendToBackup(args.Key, temp, args.Id)
-			reply.Viewnum = pb.viewNum
-			break
-		case args.Op == APPEND && pb.isPrimary():
-			temp += args.Value
-			reply.Err = pb.SendToBackup(args.Key, temp, args.Id)
+			reply.Err = pb.SendToBackup(args.Key, temp, args.Id, REPLICATEPUT)
 			reply.Viewnum = pb.viewNum
 			if reply.Err == OK {
 				pb.uniqueIds[args.Id] = reply
 			}
 			break
-		case args.Op == REPLICATE && pb.isBackup():
+		case args.Op == APPEND && pb.isPrimary():
+			temp += args.Value
+			reply.Err = pb.SendToBackup(args.Key, args.Value, args.Id, REPLICATEAPPEND)
+			reply.Viewnum = pb.viewNum
+			if reply.Err == OK {
+				pb.uniqueIds[args.Id] = reply
+			}
+			break
+		case args.Op == REPLICATEPUT && pb.isBackup():
+			// fmt.Println("REPLICATEPUT", args, pb.view, pb.me)
 			temp = args.Value
+			reply.Viewnum = pb.viewNum
+			pb.uniqueIds[args.Id] = reply
+			break
+		case args.Op == REPLICATEAPPEND && pb.isBackup():
+			// fmt.Println("REPLICATEAPPEND", args, pb.view, pb.me)
+			temp += args.Value
 			reply.Viewnum = pb.viewNum
 			pb.uniqueIds[args.Id] = reply
 			break
 		default:
 			reply.Err = ErrWrongServer
 		}
+		break
 	default:
 		reply.Err = pb.uniqueIds[args.Id].Err
 		reply.PreviousValue = pb.uniqueIds[args.Id].PreviousValue
@@ -118,20 +133,24 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 	case pb.partitioned:
 		reply.Err = ErrWrongServer
 	case reply.Err == OK: //Only commit to store if OK
+		// fmt.Println("COMMITTING", temp, args, pb.me, pb.view)
 		pb.store[args.Key] = temp
+	default:
+		// fmt.Println("ERROR<CANNOTCOMMIT", temp, args, pb.me, pb.view)
 	}
 
 	pb.mu.Unlock()
 	return nil
 }
 
-func (pb *PBServer) Migrate(backup string) {
+func (pb *PBServer) Migrate(backup string) bool {
 	if pb.isPrimary() {
 		args := &MigrationArgs{pb.store, pb.uniqueIds}
 		reply := &MigrationReply{}
-		call(backup, "PBServer.Restore", args, reply)
+		res := call(backup, "PBServer.Restore", args, reply)
+		return res
 	}
-
+	return true
 }
 
 func (pb *PBServer) Restore(args *MigrationArgs, reply *MigrationReply) error {
@@ -166,8 +185,14 @@ func (pb *PBServer) tick() {
 		pb.partitioned = true
 		pb.mu.Unlock()
 		return
-	case view.Backup != pb.view.Backup:
-		pb.Migrate(view.Backup)
+	case view.Backup != pb.view.Backup || pb.migrate:
+		res := pb.Migrate(view.Backup)
+		// If migration failed, retry migrate.
+		if !res {
+			pb.migrate = true
+		} else {
+			pb.migrate = false
+		}
 	}
 	pb.viewNum = view.Viewnum
 	pb.view = view

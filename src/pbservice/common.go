@@ -1,12 +1,13 @@
 package pbservice
 
 const (
-	OK             = "OK"
-	ErrNoKey       = "ErrNoKey"
-	ErrWrongServer = "ErrWrongServer"
-	PUT            = "PUT"
-	APPEND         = "APPEND"
-	REPLICATE      = "REPLICATE"
+	OK              = "OK"
+	ErrNoKey        = "ErrNoKey"
+	ErrWrongServer  = "ErrWrongServer"
+	PUT             = "PUT"
+	APPEND          = "APPEND"
+	REPLICATEPUT    = "REPLICATEPUT"
+	REPLICATEAPPEND = "REPLICATEAPPEND"
 )
 
 type Err string
