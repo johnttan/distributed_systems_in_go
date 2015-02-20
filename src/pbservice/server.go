@@ -44,6 +44,10 @@ func (pb *PBServer) isUnassigned() bool {
 	return !pb.isPrimary() && !pb.isBackup()
 }
 
+func (pb *PBServer) hasBackup() bool {
+	return pb.view.Backup != ""
+}
+
 func (pb *PBServer) isCached(args *PutAppendArgs) bool {
 	return pb.uniqueIds[args.Id] != nil
 }
@@ -57,28 +61,30 @@ func (pb *PBServer) CheckGet(args *GetArgs, reply *GetReply) error {
 }
 
 func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
-	// Your code here.
-	if pb.partitioned {
+	pb.mu.Lock()
+	if pb.partitioned || !pb.isPrimary() {
 		reply.Err = ErrWrongServer
+		pb.mu.Unlock()
 		return errors.New("Partitioned")
 	}
 	res := true
-	if pb.isPrimary() && pb.view.Backup != "" {
+	if pb.hasBackup() {
 		checkArgs := &GetArgs{}
 		checkReply := &GetReply{}
 		res = call(pb.view.Backup, "PBServer.CheckGet", checkArgs, checkReply)
 	}
-	if res && pb.isPrimary() && !pb.partitioned {
-		if pb.store[args.Key] == "" {
+	if res {
+		reply.Value = pb.store[args.Key]
+		if reply.Value == "" {
 			reply.Err = ErrNoKey
-			return errors.New("NO KEY")
 		} else {
 			reply.Err = OK
-			reply.Value = pb.store[args.Key]
-			return nil
 		}
+		pb.mu.Unlock()
+		return nil
 	} else {
 		reply.Err = ErrWrongServer
+		pb.mu.Unlock()
 		return errors.New("NOT PRIMARY")
 	}
 }
@@ -126,7 +132,7 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 	case args.Op == APPEND:
 		temp += args.Value
 	}
-	if pb.view.Backup != "" {
+	if pb.hasBackup() {
 		success = call(pb.view.Backup, "PBServer.Replicate", args, reply)
 	}
 
@@ -186,11 +192,12 @@ func (pb *PBServer) tick() {
 		res := pb.Migrate(view.Backup)
 		// If migration failed due to unreliable connection, retry migrate on next tick.
 		if !res {
+			fmt.Println("MIGRATION FAILED")
 			pb.migrate = true
 		} else {
 			pb.migrate = false
 		}
-	case (pb.isPrimary() && view.Primary != pb.me) || pb.isBackup() && view.Backup != pb.me:
+	case (pb.isPrimary() && view.Primary != pb.me) || (pb.isBackup() && view.Backup != pb.me):
 		// Changed from primary to backup. Have to invalidate cache, otherwise will respond to client requests
 		fmt.Println("INVALIDATING CACHE")
 		pb.uniqueIds = make(map[int64]*PutAppendReply)
