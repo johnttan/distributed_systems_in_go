@@ -80,10 +80,6 @@ func (pb *PBServer) SendToBackup(key string, value string, id int64, op string) 
 func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendReply) error {
 	pb.mu.Lock()
 	reply.Err = OK
-	// Invalidate cache if viewnum has changed.
-	if pb.uniqueIds[args.Id] != nil && pb.uniqueIds[args.Id].Viewnum != pb.viewNum {
-		pb.uniqueIds[args.Id] = nil
-	}
 	// Save temp before committing
 	temp := pb.store[args.Key]
 
@@ -159,11 +155,6 @@ func (pb *PBServer) Restore(args *MigrationArgs, reply *MigrationReply) error {
 		reply.Err = OK
 		pb.store = args.Store
 		pb.uniqueIds = args.UniqueIds
-		for id, reply := range pb.uniqueIds {
-			if reply.Viewnum != pb.viewNum {
-				pb.uniqueIds[id] = nil
-			}
-		}
 	}
 	pb.mu.Unlock()
 	return nil
