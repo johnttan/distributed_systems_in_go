@@ -106,7 +106,6 @@ func (pb *PBServer) Replicate(args *PutAppendArgs, reply *PutAppendReply) error 
 func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendReply) error {
 	pb.mu.Lock()
 	if pb.partitioned || !pb.isPrimary() {
-		reply.Err = ErrWrongServer
 		pb.mu.Unlock()
 		return errors.New("Partitioned or not primary")
 	}
@@ -119,7 +118,7 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 	// Save temp before committing
 	temp := pb.store[args.Key]
 	reply.PreviousValue = pb.store[args.Key]
-	success := false
+	success := true
 	// Decide between puts, appends, and replicates.
 	switch {
 	case args.Op == PUT:
@@ -127,7 +126,6 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 	case args.Op == APPEND:
 		temp += args.Value
 	}
-	success = true
 	if pb.view.Backup != "" {
 		success = call(pb.view.Backup, "PBServer.Replicate", args, reply)
 	}
@@ -143,7 +141,7 @@ func (pb *PBServer) PutAppendReplicate(args *PutAppendArgs, reply *PutAppendRepl
 	default:
 		pb.mu.Unlock()
 		reply.Err = ErrWrongServer
-		return errors.New("No matching operation")
+		return errors.New("FAILED")
 	}
 }
 
@@ -194,6 +192,7 @@ func (pb *PBServer) tick() {
 		}
 	case (pb.isPrimary() && view.Primary != pb.me) || pb.isBackup() && view.Backup != pb.me:
 		// Changed from primary to backup. Have to invalidate cache, otherwise will respond to client requests
+		fmt.Println("INVALIDATING CACHE")
 		pb.uniqueIds = make(map[int64]*PutAppendReply)
 	}
 	pb.viewNum = view.Viewnum
