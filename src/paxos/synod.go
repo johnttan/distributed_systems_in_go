@@ -46,5 +46,5 @@ func (px *Paxos) Propose(prop *Proposer) {
 }
 
 func (px *Paxos) Prepare(prop *Proposal) {
-
+	fmt.Println("prepare called")
 }
