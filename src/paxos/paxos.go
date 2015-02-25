@@ -30,28 +30,27 @@ import "sync"
 import "fmt"
 import "math/rand"
 
-type PrepareArgs struct {
-	proposal Proposal
+type PrepareReply struct {
+	acceptor Acceptor
 }
 
 type Proposal struct {
-	num int
-	id int
+	num   int
+	id    int
+	value interface{}
 }
 
 type Proposer struct {
-	seq int
-	proposal   Proposal
-	value interface{}
-	decided bool
+	seq      int
+	proposal Proposal
+	decided  bool
 }
 
 type Acceptor struct {
-	seq             int
-	highestPrepare       Proposal
-	highestAccept        Proposal
-	highestAcceptedValue interface{}
-	decided              bool
+	seq            int
+	highestPrepare Proposal
+	highestAccept  Proposal
+	decided        bool
 }
 
 type Paxos struct {
@@ -64,8 +63,8 @@ type Paxos struct {
 	me         int // index into peers[]
 
 	// Your data here.
-	acceptors map[int]Acceptor
-	proposers map[int]Proposer
+	acceptors map[int]*Acceptor
+	proposers map[int]*Proposer
 	log       map[int]interface{}
 }
 
@@ -105,10 +104,6 @@ func call(srv string, name string, args interface{}, reply interface{}) bool {
 	return false
 }
 
-func (px *Paxos) Propose(seq int) {
-
-}
-
 //
 // the application wants paxos to start agreement on
 // instance seq, with proposed value v.
@@ -117,9 +112,11 @@ func (px *Paxos) Propose(seq int) {
 // is reached.
 //
 func (px *Paxos) Start(seq int, v interface{}) {
-	if px.proposers[seq] == null{
-		px.proposers[seq] = &Proposer{seq Proposal{0 px.me} v}
-		go px.Propose(seq)
+	if _, ok := px.proposers[seq]; !ok {
+		// Create new proposer instance for sequence number, then start proposing.
+		newProposal := Proposal{0, px.me, v}
+		px.proposers[seq] = &Proposer{seq, newProposal, false}
+		go px.Propose(px.proposers[seq])
 	}
 }
 
@@ -211,9 +208,9 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 	px.me = me
 
 	// Your initialization code here.
-	px.acceptors = make(map[int]Acceptor)
-	px.proposals = make(map[int]Proposer)
-	px.log = make(map[int]string)
+	px.acceptors = make(map[int]*Acceptor)
+	px.proposers = make(map[int]*Proposer)
+	px.log = make(map[int]interface{})
 
 	if rpcs != nil {
 		// caller will create socket &c
