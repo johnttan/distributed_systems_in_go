@@ -30,18 +30,28 @@ import "sync"
 import "fmt"
 import "math/rand"
 
+type PrepareArgs struct {
+	proposal Proposal
+}
+
+type Proposal struct {
+	num int
+	id int
+}
+
 type Proposer struct {
-	num   int
-	value string
-	decided interface{}
+	seq int
+	proposal   Proposal
+	value interface{}
+	decided bool
 }
 
 type Acceptor struct {
-	num                  int
-	highestPrepare       int
-	highestAccept        int
+	seq             int
+	highestPrepare       Proposal
+	highestAccept        Proposal
 	highestAcceptedValue interface{}
-	decided              interface{}
+	decided              bool
 }
 
 type Paxos struct {
@@ -55,7 +65,7 @@ type Paxos struct {
 
 	// Your data here.
 	acceptors map[int]Acceptor
-	proposals map[int]Proposer
+	proposers map[int]Proposer
 	log       map[int]interface{}
 }
 
@@ -95,6 +105,10 @@ func call(srv string, name string, args interface{}, reply interface{}) bool {
 	return false
 }
 
+func (px *Paxos) Propose(seq int) {
+
+}
+
 //
 // the application wants paxos to start agreement on
 // instance seq, with proposed value v.
@@ -103,15 +117,9 @@ func call(srv string, name string, args interface{}, reply interface{}) bool {
 // is reached.
 //
 func (px *Paxos) Start(seq int, v interface{}) {
-	if px.proposals[seq] == null{
-		px.proposals[seq] = &Proposer{seq v}
-		go func (){
-			for px.proposals[seq].decided == null{
-				for _, peer := range px.peers {
-
-				}
-			}
-		}()
+	if px.proposers[seq] == null{
+		px.proposers[seq] = &Proposer{seq Proposal{0 px.me} v}
+		go px.Propose(seq)
 	}
 }
 
