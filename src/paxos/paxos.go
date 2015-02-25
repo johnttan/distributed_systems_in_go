@@ -30,6 +30,19 @@ import "sync"
 import "fmt"
 import "math/rand"
 
+type Proposer struct {
+	num   int
+	value string
+	decided interface{}
+}
+
+type Acceptor struct {
+	num                  int
+	highestPrepare       int
+	highestAccept        int
+	highestAcceptedValue interface{}
+	decided              interface{}
+}
 
 type Paxos struct {
 	mu         sync.Mutex
@@ -40,8 +53,10 @@ type Paxos struct {
 	peers      []string
 	me         int // index into peers[]
 
-
 	// Your data here.
+	acceptors map[int]Acceptor
+	proposals map[int]Proposer
+	log       map[int]interface{}
 }
 
 //
@@ -80,7 +95,6 @@ func call(srv string, name string, args interface{}, reply interface{}) bool {
 	return false
 }
 
-
 //
 // the application wants paxos to start agreement on
 // instance seq, with proposed value v.
@@ -89,7 +103,16 @@ func call(srv string, name string, args interface{}, reply interface{}) bool {
 // is reached.
 //
 func (px *Paxos) Start(seq int, v interface{}) {
-	// Your code here.
+	if px.proposals[seq] == null{
+		px.proposals[seq] = &Proposer{seq v}
+		go func (){
+			for px.proposals[seq].decided == null{
+				for _, peer := range px.peers {
+
+				}
+			}
+		}()
+	}
 }
 
 //
@@ -157,7 +180,6 @@ func (px *Paxos) Status(seq int) (bool, interface{}) {
 	return false, nil
 }
 
-
 //
 // tell the peer to shut itself down.
 // for testing.
@@ -180,8 +202,10 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 	px.peers = peers
 	px.me = me
 
-
 	// Your initialization code here.
+	px.acceptors = make(map[int]Acceptor)
+	px.proposals = make(map[int]Proposer)
+	px.log = make(map[int]string)
 
 	if rpcs != nil {
 		// caller will create socket &c
@@ -233,7 +257,6 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 			}
 		}()
 	}
-
 
 	return px
 }
