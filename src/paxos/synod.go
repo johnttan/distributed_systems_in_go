@@ -2,9 +2,14 @@ package paxos
 
 import "fmt"
 import "errors"
+import "time"
+import "math/rand"
 
+//TODO: Major Refactoring.
 func (px *Paxos) Propose(proposer *Proposer) {
 	// If fails at any step in chain, will increment proposal number and try again.
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+
 	for !proposer.Decided {
 
 		proposer.Proposal.Num++
@@ -32,7 +37,7 @@ func (px *Paxos) Propose(proposer *Proposer) {
 				numDone++
 				if success {
 					numSuccess++
-					fmt.Println("highest accept", reply.Acceptor.HighestAccept, currentProp)
+					// fmt.Println("highest accept", reply.Acceptor.HighestAccept, currentProp)
 					// Set highest Value from Accepted values
 					// If failed, currentProp will be reset next cycle
 					if reply.Acceptor.HighestAccept.Num > highestAcceptNum {
@@ -99,13 +104,24 @@ func (px *Paxos) Propose(proposer *Proposer) {
 				for _, peer := range px.peers {
 					if px.peers[px.me] == peer {
 						go func() {
-							reply := &AcceptReply{}
-							px.Decide(&currentProp, reply)
+							reply := &DecideReply{}
+							args := &DecideArgs{currentProp, px.done}
+							px.Decide(args, reply)
 						}()
 					} else {
 						go func(peer string) {
-							reply := &AcceptReply{}
-							call(peer, "Paxos.Decide", currentProp, reply)
+							reply := &DecideReply{}
+							args := &DecideArgs{currentProp, px.done}
+							success := call(peer, "Paxos.Decide", args, reply)
+							if success {
+								fmt.Println("UPDATING DONE TABLE", reply.Done, px.me)
+                //Update local done map.
+								for server, seq := range reply.Done {
+									if px.done[server] <= seq {
+										px.done[server] = seq
+									}
+								}
+							}
 						}(peer)
 
 					}
@@ -119,17 +135,26 @@ func (px *Paxos) Propose(proposer *Proposer) {
 			}
 		} else {
 		}
-
+		sleep := time.Millisecond * time.Duration(r.Intn(100))
+		time.Sleep(sleep)
 	}
 }
 
-func (px *Paxos) Decide(prop *Proposal, reply *AcceptReply) error {
-	fmt.Println("DECIDED", prop, px.peers[px.me], px.peers)
-	px.log[prop.Seq] = prop.Value
+func (px *Paxos) Decide(args *DecideArgs, reply *DecideReply) error {
+	fmt.Println("DECIDED", args.Done, px.me)
+	px.log[args.Prop.Seq] = args.Prop.Value
+  for server, seq := range args.Done {
+    //Check if it's less than or equal to existing done min. Set update local done map.
+    if px.done[server] <= seq {
+      px.done[server] = seq
+    }
+  }
+	reply.Done = px.done
 	return nil
 }
 
 func (px *Paxos) Accept(prop *Proposal, reply *AcceptReply) error {
+	px.mu.Lock()
 	reply.Prop = *prop
 	// If proposed num is greater than or equal to highest prepare seen, accept it.
 	if prop.Num >= px.acceptors[prop.Seq].HighestPrepare.Num {
@@ -139,20 +164,25 @@ func (px *Paxos) Accept(prop *Proposal, reply *AcceptReply) error {
 		if prop.Seq > px.highestKnown {
 			px.highestKnown = prop.Seq
 		}
+		px.mu.Unlock()
 		return nil
 	} else {
+		px.mu.Lock()
 		return errors.New("Not latest prepare")
 	}
 }
 
 func (px *Paxos) Prepare(prop *Proposal, reply *PrepareReply) error {
+	px.mu.Lock()
 	if _, ok := px.acceptors[prop.Seq]; ok {
 		reply.Acceptor = *px.acceptors[prop.Seq]
 		// If proposed num > highest prepare seen, accept this prepare
 		if px.acceptors[prop.Seq].HighestPrepare.Num < prop.Num {
 			px.acceptors[prop.Seq].HighestPrepare = *prop
+			px.mu.Unlock()
 			return nil
 		} else {
+			px.mu.Unlock()
 			return errors.New("Old prepare")
 		}
 	} else {
@@ -160,6 +190,7 @@ func (px *Paxos) Prepare(prop *Proposal, reply *PrepareReply) error {
 		px.acceptors[prop.Seq].Seq = prop.Seq
 		px.acceptors[prop.Seq].HighestPrepare = *prop
 		reply.Acceptor = *px.acceptors[prop.Seq]
+		px.mu.Unlock()
 		return nil
 	}
 }

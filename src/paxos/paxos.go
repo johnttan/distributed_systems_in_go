@@ -38,6 +38,15 @@ type AcceptReply struct {
 	Prop Proposal
 }
 
+type DecideReply struct {
+	Done map[int]int
+}
+
+type DecideArgs struct {
+	Prop Proposal
+	Done map[int]int
+}
+
 type Proposal struct {
 	Num   int
 	Id    int
@@ -72,7 +81,7 @@ type Paxos struct {
 	proposers    map[int]*Proposer
 	log          map[int]interface{}
 	highestKnown int
-	done         int
+	done         map[int]int
 }
 
 //
@@ -133,8 +142,9 @@ func (px *Paxos) Start(seq int, v interface{}) {
 // see the comments for Min() for more explanation.
 //
 func (px *Paxos) Done(seq int) {
+	fmt.Println("CALLED DONE", seq, "ME", px.me)
 	// Your code here.
-	px.done = seq
+	px.done[px.me] = seq
 }
 
 //
@@ -177,7 +187,21 @@ func (px *Paxos) Max() int {
 //
 func (px *Paxos) Min() int {
 	// You code here.
-	return 0
+	min := px.done[0]
+	fmt.Println("CALLED MIN", px.done, px.me, len(px.done))
+	//If all nodes have responded with initial dones.
+	if len(px.done) == len(px.peers) {
+		for _, seq := range px.done {
+			fmt.Println("iterating through dones", seq, "ME", px.me)
+			if seq < min {
+				min = seq
+			}
+		}		
+	}else{
+		return 0
+	}
+
+	return min + 1
 }
 
 //
@@ -222,6 +246,7 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 	px.acceptors = make(map[int]*Acceptor)
 	px.proposers = make(map[int]*Proposer)
 	px.log = make(map[int]interface{})
+	px.done = make(map[int]int)
 
 	if rpcs != nil {
 		// caller will create socket &c
