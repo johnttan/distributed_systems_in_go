@@ -14,6 +14,7 @@ func (px *Paxos) Propose(proposer *Proposer) {
 	for !proposer.Decided && !px.dead {
 
 		successProposing := false
+		successAccepting := false
 
 		counter++
 		proposer.Proposal.Num = counter*len(px.peers) + px.me
@@ -49,80 +50,59 @@ func (px *Paxos) Propose(proposer *Proposer) {
 		// fmt.Println(doneProposing, "DONE")
 
 		// if true, succeeded, if false, failed
+
 		if successProposing {
 			numSuccess := 0
-			numDone := 0
-			doneAccepting := make(chan bool)
-			for _, peer := range px.peers {
-				go func(peer string) {
-					reply := &AcceptReply{currentProp}
-					var success bool
-					if peer == px.peers[px.me] {
-						err := px.Accept(&currentProp, reply)
-						if err != nil {
-							success = false
-						} else {
-							success = true
-						}
-					} else {
-						success = call(peer, "Paxos.Accept", currentProp, reply)
-
-					}
-					numDone++
-					if success {
-						numSuccess++
-					}
-
-					// majority success
-					if numSuccess > len(px.peers)/2 {
-						doneAccepting <- true
-						return
-					}
-					// done without majority
-					if numDone == len(px.peers) {
-						doneAccepting <- false
-						return
-					}
-				}(peer)
+			doneAcceptChans := make([]chan *AcceptReply, len(px.peers))
+			for pIndex, peer := range px.peers {
+				acceptChan := make(chan *AcceptReply)
+				doneAcceptChans[pIndex] = acceptChan
+				go px.AcceptPeer(peer, proposer, currentProp, acceptChan)
 			}
 
-			successAccepting := <-doneAccepting
+			for _, channel := range doneAcceptChans {
+				reply := <-channel
+				if reply != nil {
+					numSuccess++
+				}
+			}
 
-			if successAccepting {
-				for _, peer := range px.peers {
-					if px.peers[px.me] == peer {
-						go func() {
-							reply := &DecideReply{}
-							args := &DecideArgs{currentProp, px.done}
-							px.Decide(args, reply)
-						}()
-					} else {
-						go func(peer string) {
-							reply := &DecideReply{}
-							args := &DecideArgs{currentProp, px.done}
-							success := call(peer, "Paxos.Decide", args, reply)
-							if success {
-								// fmt.Println("SUCCESS ISSUING DECISION", currentProp.Seq, reply.Done, px.me)
-								// fmt.Println("UPDATING DONE TABLE", reply.Done, px.me)
-								//Update local done map.
-								for server, seq := range reply.Done {
-									if px.done[server] <= seq {
-										px.done[server] = seq
-									}
+			if numSuccess > len(px.peers)/2 {
+				successAccepting = true
+			}
+		}
+		if successAccepting {
+			for _, peer := range px.peers {
+				if px.peers[px.me] == peer {
+					go func() {
+						reply := &DecideReply{}
+						args := &DecideArgs{currentProp, px.done}
+						px.Decide(args, reply)
+					}()
+				} else {
+					go func(peer string) {
+						reply := &DecideReply{}
+						args := &DecideArgs{currentProp, px.done}
+						success := call(peer, "Paxos.Decide", args, reply)
+						if success {
+							// fmt.Println("SUCCESS ISSUING DECISION", currentProp.Seq, reply.Done, px.me)
+							// fmt.Println("UPDATING DONE TABLE", reply.Done, px.me)
+							//Update local done map.
+							for server, seq := range reply.Done {
+								if px.done[server] <= seq {
+									px.done[server] = seq
 								}
 							}
-						}(peer)
+						}
+					}(peer)
 
-					}
 				}
-				proposer.Decided = true
-				if currentProp.Seq > px.highestKnown {
-					px.highestKnown = currentProp.Seq
-				}
-				proposer.Proposal = currentProp
-			} else {
 			}
-		} else {
+			proposer.Decided = true
+			if currentProp.Seq > px.highestKnown {
+				px.highestKnown = currentProp.Seq
+			}
+			proposer.Proposal = currentProp
 		}
 		sleep := time.Millisecond * time.Duration(r.Intn(500))
 		time.Sleep(sleep)

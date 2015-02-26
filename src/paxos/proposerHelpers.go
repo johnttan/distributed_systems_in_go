@@ -14,18 +14,26 @@ func (px *Paxos) PreparePeer(peer string, proposer *Proposer, done chan *Prepare
 	}
 	if success {
 		done <- reply
-	} else {
-		done <- nil
+		return
 	}
+	done <- nil
 }
 
-// if success {
-// numSuccess++
-// // fmt.Println("highest accept", reply.Acceptor.HighestAccept, currentProp)
-// // Set highest Value from Accepted values
-// // If failed, currentProp will be reset next cycle
-// if reply.Acceptor.HighestAccept.Num > highestAcceptNum {
-//   currentProp.Value = reply.Acceptor.HighestAccept.Value
-//   highestAcceptNum = reply.Acceptor.HighestAccept.Num
-// }
-// }
+func (px *Paxos) AcceptPeer(peer string, proposer *Proposer, currentProp Proposal, done chan *AcceptReply) {
+	reply := &AcceptReply{currentProp}
+	success := false
+	if peer == px.peers[px.me] {
+		err := px.Accept(&currentProp, reply)
+		if err == nil {
+			success = true
+		}
+	} else {
+		success = call(peer, "Paxos.Accept", currentProp, reply)
+	}
+
+	if success {
+		done <- reply
+		return
+	}
+	done <- nil
+}
