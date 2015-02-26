@@ -50,9 +50,6 @@ func (px *Paxos) Propose(proposer *Proposer) {
 					numDone++
 					if success {
 						numSuccess++
-						if reply.Acceptor.HighestAccept.Num > currentProp.Num {
-							currentProp = reply.Acceptor.HighestAccept
-						}
 					}
 
 					// majority success
@@ -69,6 +66,17 @@ func (px *Paxos) Propose(proposer *Proposer) {
 			}
 
 			successAccepting := <-doneAccepting
+
+			if successAccepting {
+        for _, peer := px.peers {
+          go func(peer string) {
+            reply := &AcceptReply{}
+            call(peer, "Paxos.Decide", currentProp, reply)
+          }(peer)
+        }
+			} else {
+				fmt.Println("FAILED ACCEPTING")
+			}
 		} else {
 			fmt.Println("FAILED PROPOSING")
 		}
@@ -93,3 +101,5 @@ func (px *Paxos) Prepare(prop *Proposal, reply *PrepareReply) error {
 		return nil
 	}
 }
+
+
