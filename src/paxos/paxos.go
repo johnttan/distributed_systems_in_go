@@ -68,9 +68,10 @@ type Paxos struct {
 	me         int // index into peers[]
 
 	// Your data here.
-	acceptors map[int]*Acceptor
-	proposers map[int]*Proposer
-	log       map[int]interface{}
+	acceptors    map[int]*Acceptor
+	proposers    map[int]*Proposer
+	log          map[int]interface{}
+	highestKnown int
 }
 
 //
@@ -141,7 +142,7 @@ func (px *Paxos) Done(seq int) {
 //
 func (px *Paxos) Max() int {
 	// Your code here.
-	return 0
+	return px.highestKnown
 }
 
 //

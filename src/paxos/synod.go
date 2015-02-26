@@ -15,10 +15,21 @@ func (px *Paxos) Propose(proposer *Proposer) {
 		for _, peer := range px.peers {
 			go func(peer string) {
 				reply := &PrepareReply{}
-				success := call(peer, "Paxos.Prepare", &proposer.Proposal, reply)
+				var success bool
+				if peer == px.peers[px.me] {
+					err := px.Prepare(&proposer.Proposal, reply)
+					if err != nil {
+						success = false
+					} else {
+						success = true
+					}
+				} else {
+					success = call(peer, "Paxos.Prepare", &proposer.Proposal, reply)
+				}
 				numDone++
 				if success {
 					numSuccess++
+					fmt.Println("highest accept", reply.Acceptor.HighestAccept, currentProp)
 					if reply.Acceptor.HighestAccept.Num > currentProp.Num {
 						currentProp = reply.Acceptor.HighestAccept
 					}
@@ -46,7 +57,18 @@ func (px *Paxos) Propose(proposer *Proposer) {
 			for _, peer := range px.peers {
 				go func(peer string) {
 					reply := &AcceptReply{currentProp}
-					success := call(peer, "Paxos.Accept", currentProp, reply)
+					var success bool
+					if peer == px.peers[px.me] {
+						err := px.Accept(&currentProp, reply)
+						if err != nil {
+							success = false
+						} else {
+							success = true
+						}
+					} else {
+						success = call(peer, "Paxos.Accept", currentProp, reply)
+
+					}
 					numDone++
 					if success {
 						numSuccess++
@@ -69,34 +91,47 @@ func (px *Paxos) Propose(proposer *Proposer) {
 
 			if successAccepting {
 				for _, peer := range px.peers {
-					go func(peer string) {
-						reply := &AcceptReply{}
-						call(peer, "Paxos.Decide", currentProp, reply)
-					}(peer)
+					if px.peers[px.me] == peer {
+						go func() {
+							reply := &AcceptReply{}
+							px.Decide(&currentProp, reply)
+						}()
+					} else {
+						go func(peer string) {
+							reply := &AcceptReply{}
+							call(peer, "Paxos.Decide", currentProp, reply)
+						}(peer)
+
+					}
 				}
-				proposer.decided = true
-				px.log[currentProp.Seq] = currentProp.Value
+				proposer.Decided = true
+				if currentProp.Seq > px.highestKnown {
+					px.highestKnown = currentProp.Seq
+				}
 				proposer.Proposal = currentProp
 			} else {
-				fmt.Println("FAILED ACCEPTING")
 			}
 		} else {
-			fmt.Println("FAILED PROPOSING")
 		}
 
 	}
 }
 
 func (px *Paxos) Decide(prop *Proposal, reply *AcceptReply) error {
+	fmt.Println("DECIDED", prop, px.peers[px.me], px.peers)
 	px.log[prop.Seq] = prop.Value
+	return nil
 }
 
 func (px *Paxos) Accept(prop *Proposal, reply *AcceptReply) error {
-	reply.Acceptor = px.Acceptors[prop.Seq]
-	if prop.Num >= px.Acceptors[prop.Seq].HighestPrepare.Num {
-		px.Acceptors[prop.Seq].HighestPrepare = prop
-		px.Acceptors[prop.Seq].HighestAccept = prop
-		px.Acceptors[prop.Seq].Decided = true
+	reply.Prop = *prop
+	if prop.Num >= px.acceptors[prop.Seq].HighestPrepare.Num {
+		px.acceptors[prop.Seq].HighestPrepare = *prop
+		px.acceptors[prop.Seq].HighestAccept = *prop
+		px.acceptors[prop.Seq].Decided = true
+		if prop.Seq > px.highestKnown {
+			px.highestKnown = prop.Seq
+		}
 		return nil
 	} else {
 		return errors.New("Not latest prepare")
@@ -104,7 +139,6 @@ func (px *Paxos) Accept(prop *Proposal, reply *AcceptReply) error {
 }
 
 func (px *Paxos) Prepare(prop *Proposal, reply *PrepareReply) error {
-	fmt.Println("prepare called", prop, px.me)
 	if _, ok := px.acceptors[prop.Seq]; ok {
 		reply.Acceptor = *px.acceptors[prop.Seq]
 		if px.acceptors[prop.Seq].HighestPrepare.Num < prop.Num {
