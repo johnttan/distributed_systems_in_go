@@ -7,13 +7,14 @@ import "math/rand"
 
 //TODO: Major Refactoring.
 func (px *Paxos) Propose(proposer *Proposer) {
+	fmt.Print("")
 	// If fails at any step in chain, will increment proposal number and try again.
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	counter := 0
 	for !proposer.Decided && !px.dead {
 		counter++
 		proposer.Proposal.Num = counter*len(px.peers) + px.me
-		fmt.Println("PROPOSING", proposer.Proposal.Num, px.me)
+		// fmt.Println("PROPOSING", proposer.Proposal.Num, px.me)
 		currentProp := proposer.Proposal
 		numSuccess := 0
 		numDone := 0
@@ -37,12 +38,13 @@ func (px *Paxos) Propose(proposer *Proposer) {
 				numDone++
 				if success {
 					numSuccess++
-				}
-				// fmt.Println("highest accept", reply.Acceptor.HighestAccept, currentProp)
-				// Set highest Value from Accepted values
-				if reply.Acceptor.HighestAccept.Num > currentProp.Num {
-					currentProp.Value = reply.Acceptor.HighestAccept.Value
-					highestAcceptNum = reply.Acceptor.HighestAccept.Num
+					// fmt.Println("highest accept", reply.Acceptor.HighestAccept, currentProp)
+					// Set highest Value from Accepted values
+					// If failed, currentProp will be reset next cycle
+					if reply.Acceptor.HighestAccept.Num > highestAcceptNum {
+						currentProp.Value = reply.Acceptor.HighestAccept.Value
+						highestAcceptNum = reply.Acceptor.HighestAccept.Num
+					}
 				}
 
 				// majority success
@@ -112,7 +114,7 @@ func (px *Paxos) Propose(proposer *Proposer) {
 							args := &DecideArgs{currentProp, px.done}
 							success := call(peer, "Paxos.Decide", args, reply)
 							if success {
-								fmt.Println("SUCCESS ISSUING DECISION", currentProp.Seq, reply.Done, px.me)
+								// fmt.Println("SUCCESS ISSUING DECISION", currentProp.Seq, reply.Done, px.me)
 								// fmt.Println("UPDATING DONE TABLE", reply.Done, px.me)
 								//Update local done map.
 								for server, seq := range reply.Done {
@@ -133,7 +135,6 @@ func (px *Paxos) Propose(proposer *Proposer) {
 			} else {
 			}
 		} else {
-
 		}
 		sleep := time.Millisecond * time.Duration(r.Intn(2000))
 		time.Sleep(sleep)
@@ -142,7 +143,7 @@ func (px *Paxos) Propose(proposer *Proposer) {
 
 func (px *Paxos) Decide(args *DecideArgs, reply *DecideReply) error {
 	px.mu.Lock()
-	fmt.Println("DECIDED", "SEQ", args.Prop.Seq, "Num", args.Prop.Num, "Id", args.Prop.Id, args.Done, px.me)
+	// fmt.Println("DECIDED", "SEQ", args.Prop.Seq, "Num", args.Prop.Num, "Id", args.Prop.Id, args.Done, px.me)
 	px.log[args.Prop.Seq] = args.Prop.Value
 	for server, seq := range args.Done {
 		//Check if it's less than or equal to existing done min. Set update local done map.
