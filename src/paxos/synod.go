@@ -10,7 +10,7 @@ func (px *Paxos) Propose(proposer *Proposer) {
 	// If fails at any step in chain, will increment proposal number and try again.
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	for !proposer.Decided {
+	for !proposer.Decided && !px.dead {
 
 		proposer.Proposal.Num++
 
@@ -114,8 +114,8 @@ func (px *Paxos) Propose(proposer *Proposer) {
 							args := &DecideArgs{currentProp, px.done}
 							success := call(peer, "Paxos.Decide", args, reply)
 							if success {
-								fmt.Println("UPDATING DONE TABLE", reply.Done, px.me)
-                //Update local done map.
+								// fmt.Println("UPDATING DONE TABLE", reply.Done, px.me)
+								//Update local done map.
 								for server, seq := range reply.Done {
 									if px.done[server] <= seq {
 										px.done[server] = seq
@@ -141,15 +141,39 @@ func (px *Paxos) Propose(proposer *Proposer) {
 }
 
 func (px *Paxos) Decide(args *DecideArgs, reply *DecideReply) error {
+	px.mu.Lock()
 	fmt.Println("DECIDED", args.Done, px.me)
 	px.log[args.Prop.Seq] = args.Prop.Value
-  for server, seq := range args.Done {
-    //Check if it's less than or equal to existing done min. Set update local done map.
-    if px.done[server] <= seq {
-      px.done[server] = seq
-    }
-  }
+	for server, seq := range args.Done {
+		//Check if it's less than or equal to existing done min. Set update local done map.
+		if px.done[server] <= seq {
+			px.done[server] = seq
+		}
+	}
+
+	// Cleanup old map entries
+	min := px.Min()
+
+	for id, _ := range px.acceptors {
+		if id < min {
+			px.acceptors[id] = nil
+		}
+	}
+
+	for id, _ := range px.proposers {
+		if id < min {
+			px.proposers[id] = nil
+		}
+	}
+
+	for id, _ := range px.log {
+		if id < min {
+			px.log[id] = nil
+		}
+	}
+
 	reply.Done = px.done
+	px.mu.Unlock()
 	return nil
 }
 
@@ -157,24 +181,33 @@ func (px *Paxos) Accept(prop *Proposal, reply *AcceptReply) error {
 	px.mu.Lock()
 	reply.Prop = *prop
 	// If proposed num is greater than or equal to highest prepare seen, accept it.
-	if prop.Num >= px.acceptors[prop.Seq].HighestPrepare.Num {
-		px.acceptors[prop.Seq].HighestPrepare = *prop
-		px.acceptors[prop.Seq].HighestAccept = *prop
-		px.acceptors[prop.Seq].Decided = true
-		if prop.Seq > px.highestKnown {
-			px.highestKnown = prop.Seq
+
+	if _, ok := px.acceptors[prop.Seq]; ok && prop.Seq >= px.Min() {
+		if prop.Num >= px.acceptors[prop.Seq].HighestPrepare.Num {
+			px.acceptors[prop.Seq].HighestPrepare = *prop
+			px.acceptors[prop.Seq].HighestAccept = *prop
+			px.acceptors[prop.Seq].Decided = true
+			if prop.Seq > px.highestKnown {
+				px.highestKnown = prop.Seq
+			}
+			px.mu.Unlock()
+			return nil
+		} else {
+			px.mu.Lock()
+			return errors.New("Not latest prepare")
 		}
+	} else {
+		px.acceptors[prop.Seq] = new(Acceptor)
+		px.acceptors[prop.Seq].Seq = prop.Seq
+		px.acceptors[prop.Seq].HighestPrepare = *prop
 		px.mu.Unlock()
 		return nil
-	} else {
-		px.mu.Lock()
-		return errors.New("Not latest prepare")
 	}
 }
 
 func (px *Paxos) Prepare(prop *Proposal, reply *PrepareReply) error {
 	px.mu.Lock()
-	if _, ok := px.acceptors[prop.Seq]; ok {
+	if _, ok := px.acceptors[prop.Seq]; ok && prop.Seq >= px.Min() {
 		reply.Acceptor = *px.acceptors[prop.Seq]
 		// If proposed num > highest prepare seen, accept this prepare
 		if px.acceptors[prop.Seq].HighestPrepare.Num < prop.Num {

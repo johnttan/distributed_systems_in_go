@@ -27,6 +27,7 @@ import "log"
 import "os"
 import "syscall"
 import "sync"
+
 import "fmt"
 import "math/rand"
 
@@ -76,12 +77,13 @@ type Paxos struct {
 	peers      []string
 	me         int // index into peers[]
 
-	// Your data here.
+	// acceptors/proposers/log indexed by proposal num
 	acceptors    map[int]*Acceptor
 	proposers    map[int]*Proposer
 	log          map[int]interface{}
 	highestKnown int
-	done         map[int]int
+	// done is indexed by px.me index
+	done map[int]int
 }
 
 //
@@ -127,7 +129,7 @@ func call(srv string, name string, args interface{}, reply interface{}) bool {
 // is reached.
 //
 func (px *Paxos) Start(seq int, v interface{}) {
-	if _, ok := px.proposers[seq]; !ok {
+	if _, ok := px.proposers[seq]; !ok || seq >= px.Min() {
 		// Create new proposer instance for sequence number, then start proposing.
 		newProposal := Proposal{0, px.me, v, seq}
 		px.proposers[seq] = &Proposer{seq, newProposal, false}
@@ -142,7 +144,7 @@ func (px *Paxos) Start(seq int, v interface{}) {
 // see the comments for Min() for more explanation.
 //
 func (px *Paxos) Done(seq int) {
-	fmt.Println("CALLED DONE", seq, "ME", px.me)
+	// fmt.Println("CALLED DONE", seq, "ME", px.me)
 	// Your code here.
 	px.done[px.me] = seq
 }
@@ -188,16 +190,16 @@ func (px *Paxos) Max() int {
 func (px *Paxos) Min() int {
 	// You code here.
 	min := px.done[0]
-	fmt.Println("CALLED MIN", px.done, px.me, len(px.done))
+	// fmt.Println("CALLED MIN", px.done, px.me, len(px.done))
 	//If all nodes have responded with initial dones.
 	if len(px.done) == len(px.peers) {
 		for _, seq := range px.done {
-			fmt.Println("iterating through dones", seq, "ME", px.me)
+			// fmt.Println("iterating through dones", seq, "ME", px.me)
 			if seq < min {
 				min = seq
 			}
-		}		
-	}else{
+		}
+	} else {
 		return 0
 	}
 
