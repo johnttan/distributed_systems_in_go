@@ -1,25 +1,26 @@
 package paxos
 
 import "fmt"
+import "errors"
 
-func (px *Paxos) Propose(prop *Proposer) {
-	for !prop.decided {
+func (px *Paxos) Propose(proposer *Proposer) {
+	for !proposer.Decided {
 
-		prop.proposal.num++
+		proposer.Proposal.Num++
 
-		currentProp := prop.proposal
+		currentProp := proposer.Proposal
 		numSuccess := 0
 		numDone := 0
 		doneProposing := make(chan bool)
 		for _, peer := range px.peers {
-			go func() {
+			go func(peer string) {
 				reply := &PrepareReply{}
-				success := call(peer, "Prepare", prop.proposal, reply)
+				success := call(peer, "Paxos.Prepare", &proposer.Proposal, reply)
 				numDone++
 				if success {
 					numSuccess++
-					if reply.acceptor.highestAccept.num > currentProp.num {
-						currentProp = reply.acceptor.highestAccept
+					if reply.Acceptor.HighestAccept.Num > currentProp.Num {
+						currentProp = reply.Acceptor.HighestAccept
 					}
 				}
 
@@ -33,18 +34,62 @@ func (px *Paxos) Propose(prop *Proposer) {
 					doneProposing <- false
 					return
 				}
-			}()
+			}(peer)
 		}
 		// if true, succeeded, if false, failed
-		<-doneProposing
 		successProposing := <-doneProposing
+
 		if successProposing {
-			fmt.Println("success proposing")
+			numSuccess := 0
+			numDone := 0
+			doneAccepting := make(chan bool)
+			for _, peer := range px.peers {
+				go func(peer string) {
+					reply := &AcceptReply{currentProp}
+					success := call(peer, "Paxos.Accept", currentProp, reply)
+					numDone++
+					if success {
+						numSuccess++
+						if reply.Acceptor.HighestAccept.Num > currentProp.Num {
+							currentProp = reply.Acceptor.HighestAccept
+						}
+					}
+
+					// majority success
+					if numSuccess > len(px.peers)/2 {
+						doneAccepting <- true
+						return
+					}
+					// done without majority
+					if numDone == len(px.peers) {
+						doneAccepting <- false
+						return
+					}
+				}(peer)
+			}
+
+			successAccepting := <-doneAccepting
+		} else {
+			fmt.Println("FAILED PROPOSING")
 		}
 
 	}
 }
 
-func (px *Paxos) Prepare(prop *Proposal) {
-	fmt.Println("prepare called")
+func (px *Paxos) Prepare(prop *Proposal, reply *PrepareReply) error {
+	fmt.Println("prepare called", prop, px.me)
+	reply.Acceptor = *px.acceptors[prop.Seq]
+	if _, ok := px.acceptors[prop.Seq]; ok {
+		if px.acceptors[prop.Seq].HighestPrepare.Num < prop.Num {
+			px.acceptors[prop.Seq].HighestPrepare = *prop
+			return nil
+		} else {
+			return errors.New("Old prepare")
+		}
+	} else {
+		px.acceptors[prop.Seq] = new(Acceptor)
+		px.acceptors[prop.Seq].Seq = prop.Seq
+		px.acceptors[prop.Seq].HighestPrepare = *prop
+		return nil
+	}
 }

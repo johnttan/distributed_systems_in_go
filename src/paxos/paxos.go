@@ -31,26 +31,31 @@ import "fmt"
 import "math/rand"
 
 type PrepareReply struct {
-	acceptor Acceptor
+	Acceptor Acceptor
+}
+
+type AcceptReply struct {
+	Prop Proposal
 }
 
 type Proposal struct {
-	num   int
-	id    int
-	value interface{}
+	Num   int
+	Id    int
+	Value interface{}
+	Seq   int
 }
 
 type Proposer struct {
-	seq      int
-	proposal Proposal
-	decided  bool
+	Seq      int
+	Proposal Proposal
+	Decided  bool
 }
 
 type Acceptor struct {
-	seq            int
-	highestPrepare Proposal
-	highestAccept  Proposal
-	decided        bool
+	Seq            int
+	HighestPrepare Proposal
+	HighestAccept  Proposal
+	Decided        bool
 }
 
 type Paxos struct {
@@ -100,7 +105,6 @@ func call(srv string, name string, args interface{}, reply interface{}) bool {
 		return true
 	}
 
-	fmt.Println(err)
 	return false
 }
 
@@ -114,7 +118,7 @@ func call(srv string, name string, args interface{}, reply interface{}) bool {
 func (px *Paxos) Start(seq int, v interface{}) {
 	if _, ok := px.proposers[seq]; !ok {
 		// Create new proposer instance for sequence number, then start proposing.
-		newProposal := Proposal{0, px.me, v}
+		newProposal := Proposal{1, px.me, v, seq}
 		px.proposers[seq] = &Proposer{seq, newProposal, false}
 		go px.Propose(px.proposers[seq])
 	}
