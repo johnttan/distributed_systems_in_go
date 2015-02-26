@@ -4,6 +4,7 @@ import "fmt"
 import "errors"
 
 func (px *Paxos) Propose(proposer *Proposer) {
+	// If fails at any step in chain, will increment proposal number and try again.
 	for !proposer.Decided {
 
 		proposer.Proposal.Num++
@@ -12,10 +13,12 @@ func (px *Paxos) Propose(proposer *Proposer) {
 		numSuccess := 0
 		numDone := 0
 		doneProposing := make(chan bool)
+		highestAcceptNum := 0
 		for _, peer := range px.peers {
 			go func(peer string) {
 				reply := &PrepareReply{}
 				var success bool
+				// Run local function when calling self RPC
 				if peer == px.peers[px.me] {
 					err := px.Prepare(&proposer.Proposal, reply)
 					if err != nil {
@@ -30,8 +33,11 @@ func (px *Paxos) Propose(proposer *Proposer) {
 				if success {
 					numSuccess++
 					fmt.Println("highest accept", reply.Acceptor.HighestAccept, currentProp)
-					if reply.Acceptor.HighestAccept.Num > currentProp.Num {
-						currentProp = reply.Acceptor.HighestAccept
+					// Set highest Value from Accepted values
+					// If failed, currentProp will be reset next cycle
+					if reply.Acceptor.HighestAccept.Num > highestAcceptNum {
+						currentProp.Value = reply.Acceptor.HighestAccept.Value
+						highestAcceptNum = reply.Acceptor.HighestAccept.Num
 					}
 				}
 
@@ -125,6 +131,7 @@ func (px *Paxos) Decide(prop *Proposal, reply *AcceptReply) error {
 
 func (px *Paxos) Accept(prop *Proposal, reply *AcceptReply) error {
 	reply.Prop = *prop
+	// If proposed num is greater than or equal to highest prepare seen, accept it.
 	if prop.Num >= px.acceptors[prop.Seq].HighestPrepare.Num {
 		px.acceptors[prop.Seq].HighestPrepare = *prop
 		px.acceptors[prop.Seq].HighestAccept = *prop
@@ -141,6 +148,7 @@ func (px *Paxos) Accept(prop *Proposal, reply *AcceptReply) error {
 func (px *Paxos) Prepare(prop *Proposal, reply *PrepareReply) error {
 	if _, ok := px.acceptors[prop.Seq]; ok {
 		reply.Acceptor = *px.acceptors[prop.Seq]
+		// If proposed num > highest prepare seen, accept this prepare
 		if px.acceptors[prop.Seq].HighestPrepare.Num < prop.Num {
 			px.acceptors[prop.Seq].HighestPrepare = *prop
 			return nil

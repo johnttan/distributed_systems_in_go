@@ -72,6 +72,7 @@ type Paxos struct {
 	proposers    map[int]*Proposer
 	log          map[int]interface{}
 	highestKnown int
+	done         int
 }
 
 //
@@ -119,7 +120,7 @@ func call(srv string, name string, args interface{}, reply interface{}) bool {
 func (px *Paxos) Start(seq int, v interface{}) {
 	if _, ok := px.proposers[seq]; !ok {
 		// Create new proposer instance for sequence number, then start proposing.
-		newProposal := Proposal{1, px.me, v, seq}
+		newProposal := Proposal{0, px.me, v, seq}
 		px.proposers[seq] = &Proposer{seq, newProposal, false}
 		go px.Propose(px.proposers[seq])
 	}
@@ -133,6 +134,7 @@ func (px *Paxos) Start(seq int, v interface{}) {
 //
 func (px *Paxos) Done(seq int) {
 	// Your code here.
+	px.done = seq
 }
 
 //
