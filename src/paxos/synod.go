@@ -75,6 +75,7 @@ func (px *Paxos) Propose(proposer *Proposer) {
 					}(peer)
 				}
 				proposer.decided = true
+				px.log[currentProp.Seq] = currentProp.Value
 				proposer.Proposal = currentProp
 			} else {
 				fmt.Println("FAILED ACCEPTING")

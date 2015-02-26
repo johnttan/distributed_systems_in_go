@@ -186,7 +186,11 @@ func (px *Paxos) Min() int {
 //
 func (px *Paxos) Status(seq int) (bool, interface{}) {
 	// Your code here.
-	return false, nil
+	if _, ok := px.log[seq]; ok {
+		return true, px.log[seq]
+	} else {
+		return false, nil
+	}
 }
 
 //
