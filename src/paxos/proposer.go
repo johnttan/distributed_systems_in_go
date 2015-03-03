@@ -5,7 +5,6 @@ import "fmt"
 import "time"
 import "math/rand"
 
-//TODO: Major Refactoring.
 func (px *Paxos) Propose(proposer *Proposer) {
 	fmt.Print("")
 	// If fails at any step in chain, will increment proposal number and try again.
