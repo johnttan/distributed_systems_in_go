@@ -73,7 +73,17 @@ func (ck *Clerk) Get(key string) string {
 //
 func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	// You will have to modify this function.
-	return ""
+	id := nrand()
+	success := false
+	nextServer := 0
+	for !success {
+		args := &PutAppendArgs{key value op id}
+		reply := &PutAppendReply{}
+
+		success = call(servers[nextServer], "KVPaxos.PutAppend", args, reply)
+		nextServer = (nextServer + 1) % len(servers)
+	}
+	return reply.PreviousValue
 }
 
 func (ck *Clerk) Put(key string, value string) {
