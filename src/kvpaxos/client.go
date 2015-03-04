@@ -64,8 +64,20 @@ func call(srv string, rpcname string,
 // keeps trying forever in the face of all other errors.
 //
 func (ck *Clerk) Get(key string) string {
-	// You will have to modify this function.
-	return ""
+	fmt.Println("start", key, value, op)
+	id := nrand()
+	success := false
+	nextServer := 0
+	var reply *GetReply
+	var args *GetArgs
+	for !success {
+		args = &GetArgs{key, id}
+		reply = &GetReply{}
+
+		success = call(ck.servers[nextServer], "KVPaxos.Get", args, reply)
+		nextServer = (nextServer + 1) % len(ck.servers)
+	}
+	return reply.Value
 }
 
 //
@@ -73,15 +85,18 @@ func (ck *Clerk) Get(key string) string {
 //
 func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	// You will have to modify this function.
+	fmt.Println("start", key, value, op)
 	id := nrand()
 	success := false
 	nextServer := 0
+	var reply *PutAppendReply
+	var args *PutAppendArgs
 	for !success {
-		args := &PutAppendArgs{key value op id}
-		reply := &PutAppendReply{}
+		args = &PutAppendArgs{key, value, op, id}
+		reply = &PutAppendReply{}
 
-		success = call(servers[nextServer], "KVPaxos.PutAppend", args, reply)
-		nextServer = (nextServer + 1) % len(servers)
+		success = call(ck.servers[nextServer], "KVPaxos.PutAppend", args, reply)
+		nextServer = (nextServer + 1) % len(ck.servers)
 	}
 	return reply.PreviousValue
 }

@@ -50,6 +50,7 @@ type KVPaxos struct {
 
 func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 	// Your code here.
+	fmt.Println(kv.data)
 	return nil
 }
 
@@ -62,27 +63,27 @@ func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 		newOp := Op{args.Key, args.Value, args.Op, args.UID}
 		kv.requests[args.UID] = *reply
 		result := kv.TryUntilCommitted(newOp)
-		DPrintf("aftertry", result)
+		reply.PreviousValue = result
 	}
-
+	return nil
 }
 
 func (kv *KVPaxos) TryUntilCommitted(newOp Op) string {
 	seq := kv.latestSeq + 1
 	kv.px.Start(seq, newOp)
 
-	for !success {
+	for {
 		to := 10 * time.Millisecond
 		for {
-			status, op := kv.px.Status(seq)
+			status, untypedOp := kv.px.Status(seq)
 			if status {
+				op := untypedOp.(Op)
+				result := kv.Commit(op)
+				kv.latestSeq = seq
+				seq += 1
 				if op.UID == newOp.UID {
-					result := px.Commit(op)
 					return result
-				} else {
-					seq += 1
 				}
-
 			}
 			time.Sleep(to)
 			if to < 10*time.Second {
@@ -116,7 +117,7 @@ func StartServer(servers []string, me int) *KVPaxos {
 	kv.me = me
 
 	// Your initialization code here.
-	kv.requests = make(map[string]string)
+	kv.requests = make(map[int64]PutAppendReply)
 	kv.data = make(map[string]string)
 	kv.latestSeq = -1
 
