@@ -24,8 +24,8 @@ type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
-	Key   interface{}
-	Value interface{}
+	Args interface{}
+	Op   string
 }
 
 type KVPaxos struct {
