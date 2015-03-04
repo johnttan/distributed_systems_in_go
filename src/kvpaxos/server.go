@@ -40,7 +40,7 @@ type KVPaxos struct {
 	px         *paxos.Paxos
 
 	// Your definitions here.
-	requests map[int64]interface{}
+	requests map[int64]string
 
 	data map[string]string
 
@@ -55,9 +55,8 @@ func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 		newOp := Op{args.Key, "", "Get", args.UID}
 		result := kv.TryUntilCommitted(newOp)
 		reply.Value = result
-		kv.requests[args.UID] = *reply
 	} else {
-		reply.Value = kv.requests[args.UID].(GetReply).Value
+		reply.Value = kv.requests[args.UID]
 	}
 	return nil
 }
@@ -70,9 +69,8 @@ func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 		newOp := Op{args.Key, args.Value, args.Op, args.UID}
 		result := kv.TryUntilCommitted(newOp)
 		reply.PreviousValue = result
-		kv.requests[args.UID] = *reply
 	} else {
-		reply.PreviousValue = kv.requests[args.UID].(PutAppendReply).PreviousValue
+		reply.PreviousValue = kv.requests[args.UID]
 	}
 	return nil
 }
@@ -129,7 +127,7 @@ func StartServer(servers []string, me int) *KVPaxos {
 	kv.me = me
 
 	// Your initialization code here.
-	kv.requests = make(map[int64]interface{})
+	kv.requests = make(map[int64]string)
 	kv.data = make(map[string]string)
 	kv.latestSeq = -1
 
