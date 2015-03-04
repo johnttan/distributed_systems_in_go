@@ -1,6 +1,7 @@
 package kvpaxos
 
-func (kv *KVPaxos) Commit(op Op) string {
+func (kv *KVPaxos) Commit(op Op, seq int) string {
+	kv.px.Done(seq)
 	switch op.Op {
 	case "Put":
 		kv.data[op.Key] = op.Value

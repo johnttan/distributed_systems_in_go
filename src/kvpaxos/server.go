@@ -83,7 +83,7 @@ func (kv *KVPaxos) TryUntilCommitted(newOp Op) string {
 			status, untypedOp := kv.px.Status(seq)
 			if status {
 				op := untypedOp.(Op)
-				result := kv.Commit(op)
+				result := kv.Commit(op, seq)
 				kv.latestSeq = seq
 				seq += 1
 				if op.UID == newOp.UID {
