@@ -53,9 +53,11 @@ func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 	defer kv.mu.Unlock()
 	if _, ok := kv.requests[args.UID]; !ok {
 		newOp := Op{args.Key, "", "Get", args.UID}
-		kv.requests[args.UID] = *reply
 		result := kv.TryUntilCommitted(newOp)
 		reply.Value = result
+		kv.requests[args.UID] = *reply
+	} else {
+		reply.Value = kv.requests[args.UID].(GetReply).Value
 	}
 	return nil
 }
@@ -66,9 +68,11 @@ func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 
 	if _, ok := kv.requests[args.UID]; !ok {
 		newOp := Op{args.Key, args.Value, args.Op, args.UID}
-		kv.requests[args.UID] = *reply
 		result := kv.TryUntilCommitted(newOp)
 		reply.PreviousValue = result
+		kv.requests[args.UID] = *reply
+	} else {
+		reply.PreviousValue = kv.requests[args.UID].(PutAppendReply).PreviousValue
 	}
 	return nil
 }
