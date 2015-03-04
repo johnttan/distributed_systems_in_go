@@ -24,8 +24,9 @@ type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
-	Args interface{}
-	Op   string
+	Key   string
+	Value string
+	Op    string
 }
 
 type KVPaxos struct {
@@ -37,6 +38,14 @@ type KVPaxos struct {
 	px         *paxos.Paxos
 
 	// Your definitions here.
+	requests map[int64]PutAppendReply
+
+	data map[string]string
+
+	currentSeq int
+
+	//latest seq applied to data.
+	latestSeq int
 }
 
 func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
@@ -46,8 +55,15 @@ func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 
 func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	// Your code here.
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
 
-	return nil
+	if _, ok := kv.requests[args.UID]; ok {
+		newOp := Op{args.Key, args.Value, args.Op}
+		kv.px.Start(kv.currentSeq, newOp)
+		kv.requests[args.UID] = *reply
+	}
+
 }
 
 // tell the server to shut itself down.
@@ -74,6 +90,8 @@ func StartServer(servers []string, me int) *KVPaxos {
 	kv.me = me
 
 	// Your initialization code here.
+	kv.requests = make(map[string]string)
+	kv.data = make(map[string]string)
 
 	rpcs := rpc.NewServer()
 	rpcs.Register(kv)
