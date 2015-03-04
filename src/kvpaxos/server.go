@@ -78,16 +78,18 @@ func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 func (kv *KVPaxos) TryUntilCommitted(newOp Op) string {
 	seq := kv.latestSeq + 1
 	kv.px.Start(seq, newOp)
-
+	// Keep trying new sequence slots until successfully committed.
 	for {
 		to := 5 * time.Millisecond
 		for {
 			status, untypedOp := kv.px.Status(seq)
 			if status {
 				op := untypedOp.(Op)
+				// If success, commit log. Allows server to always keep up snapshot with logs.
 				result := kv.Commit(op, seq)
 				kv.latestSeq = seq
 				seq += 1
+				// If UID is same, it means the Op was committed, else increment seq and try again
 				if op.UID == newOp.UID {
 					DPrintf("DONE TRYING", op.Key, op.Op)
 					return result
@@ -101,6 +103,14 @@ func (kv *KVPaxos) TryUntilCommitted(newOp Op) string {
 			}
 		}
 	}
+}
+
+func (kv *KVPaxos) AckReq(args *AckArgs, reply *AckReply) error {
+	op := Op{Op: "Ack", UID: args.UID}
+	// Use commit mechanism to clean up cache, with an Ack operation.
+	kv.TryUntilCommitted(op)
+
+	return nil
 }
 
 // tell the server to shut itself down.

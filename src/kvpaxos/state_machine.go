@@ -15,6 +15,10 @@ func (kv *KVPaxos) Commit(op Op, seq int) string {
 	case "Get":
 		kv.requests[op.UID] = kv.data[op.Key]
 		return kv.data[op.Key]
+	case "Ack":
+		// Clean up requests cache.
+		delete(kv.requests, op.UID)
+		return ""
 	default:
 		return ""
 	}

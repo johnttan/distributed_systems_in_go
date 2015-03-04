@@ -66,16 +66,27 @@ func call(srv string, rpcname string,
 func (ck *Clerk) Get(key string) string {
 	id := nrand()
 	success := false
-	nextServer := 0
+	nextServer := -1
 	var reply *GetReply
 	var args *GetArgs
 	for !success {
+		nextServer = (nextServer + 1) % len(ck.servers)
 		args = &GetArgs{key, id}
 		reply = &GetReply{}
 
 		success = call(ck.servers[nextServer], "KVPaxos.Get", args, reply)
-		nextServer = (nextServer + 1) % len(ck.servers)
 	}
+
+	// On successful completion of clerk request, let server know about success, so it can clean up cache.
+	go func() {
+		successAck := false
+		for !successAck {
+			ackArgs := &AckArgs{id}
+			ackReply := &AckReply{}
+			successAck = call(ck.servers[nextServer], "KVPaxos.AckReq", ackArgs, ackReply)
+		}
+	}()
+
 	return reply.Value
 }
 
@@ -97,6 +108,17 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 		success = call(ck.servers[nextServer], "KVPaxos.PutAppend", args, reply)
 		nextServer = (nextServer + 1) % len(ck.servers)
 	}
+
+	// On successful completion of clerk request, let server know about success, so it can clean up cache.
+	go func() {
+		successAck := false
+		for !successAck {
+			ackArgs := &AckArgs{id}
+			ackReply := &AckReply{}
+			successAck = call(ck.servers[nextServer], "KVPaxos.AckReq", ackArgs, ackReply)
+		}
+	}()
+
 	return reply.PreviousValue
 }
 
