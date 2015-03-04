@@ -84,7 +84,7 @@ func (px *Paxos) Propose(proposer *Proposer) {
 						args := &DecideArgs{currentProp, px.done}
 						success := call(peer, "Paxos.Decide", args, reply)
 						if success {
-							// fmt.Println("SUCCESS ISSUING DECISION", currentProp.Seq, reply.Done, px.me)
+							// fmt.Println("SUCCESS ISSUING DECISION", px.log[currentProp.Seq], currentProp.Seq, reply.Done, px.me)
 							// fmt.Println("UPDATING DONE TABLE", reply.Done, px.me)
 							//Update local done map.
 							for server, seq := range reply.Done {

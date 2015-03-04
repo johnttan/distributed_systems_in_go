@@ -64,7 +64,6 @@ func call(srv string, rpcname string,
 // keeps trying forever in the face of all other errors.
 //
 func (ck *Clerk) Get(key string) string {
-	fmt.Println("start", key, value, op)
 	id := nrand()
 	success := false
 	nextServer := 0
@@ -85,7 +84,7 @@ func (ck *Clerk) Get(key string) string {
 //
 func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	// You will have to modify this function.
-	fmt.Println("start", key, value, op)
+	fmt.Println("start", key, op)
 	id := nrand()
 	success := false
 	nextServer := 0

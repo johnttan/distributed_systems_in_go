@@ -40,7 +40,7 @@ type KVPaxos struct {
 	px         *paxos.Paxos
 
 	// Your definitions here.
-	requests map[int64]PutAppendReply
+	requests map[int64]interface{}
 
 	data map[string]string
 
@@ -51,8 +51,12 @@ type KVPaxos struct {
 func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-
-	fmt.Println(kv.data)
+	if _, ok := kv.requests[args.UID]; !ok {
+		newOp := Op{args.Key, "", "Get", args.UID}
+		kv.requests[args.UID] = *reply
+		result := kv.TryUntilCommitted(newOp)
+		reply.Value = result
+	}
 	return nil
 }
 
@@ -74,7 +78,7 @@ func (kv *KVPaxos) TryUntilCommitted(newOp Op) string {
 	kv.px.Start(seq, newOp)
 
 	for {
-		to := 10 * time.Millisecond
+		to := 5 * time.Millisecond
 		for {
 			status, untypedOp := kv.px.Status(seq)
 			if status {
@@ -83,11 +87,14 @@ func (kv *KVPaxos) TryUntilCommitted(newOp Op) string {
 				kv.latestSeq = seq
 				seq += 1
 				if op.UID == newOp.UID {
+					DPrintf("DONE TRYING", op.Key, op.Op)
 					return result
+				} else {
+					kv.px.Start(seq, newOp)
 				}
 			}
 			time.Sleep(to)
-			if to < 10*time.Second {
+			if to < 100*time.Millisecond {
 				to *= 2
 			}
 		}
@@ -118,7 +125,7 @@ func StartServer(servers []string, me int) *KVPaxos {
 	kv.me = me
 
 	// Your initialization code here.
-	kv.requests = make(map[int64]PutAppendReply)
+	kv.requests = make(map[int64]interface{})
 	kv.data = make(map[string]string)
 	kv.latestSeq = -1
 
