@@ -10,8 +10,9 @@ import "os"
 import "syscall"
 import "encoding/gob"
 import "math/rand"
+import "time"
 
-const Debug = 0
+const Debug = 1
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
@@ -27,6 +28,7 @@ type Op struct {
 	Key   string
 	Value string
 	Op    string
+	UID   int64
 }
 
 type KVPaxos struct {
@@ -42,8 +44,6 @@ type KVPaxos struct {
 
 	data map[string]string
 
-	currentSeq int
-
 	//latest seq applied to data.
 	latestSeq int
 }
@@ -58,12 +58,38 @@ func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 
-	if _, ok := kv.requests[args.UID]; ok {
-		newOp := Op{args.Key, args.Value, args.Op}
-		kv.px.Start(kv.currentSeq, newOp)
+	if _, ok := kv.requests[args.UID]; !ok {
+		newOp := Op{args.Key, args.Value, args.Op, args.UID}
 		kv.requests[args.UID] = *reply
+		result := kv.TryUntilCommitted(newOp)
+		DPrintf("aftertry", result)
 	}
 
+}
+
+func (kv *KVPaxos) TryUntilCommitted(newOp Op) string {
+	seq := kv.latestSeq + 1
+	kv.px.Start(seq, newOp)
+
+	for !success {
+		to := 10 * time.Millisecond
+		for {
+			status, op := kv.px.Status(seq)
+			if status {
+				if op.UID == newOp.UID {
+					result := px.Commit(op)
+					return result
+				} else {
+					seq += 1
+				}
+
+			}
+			time.Sleep(to)
+			if to < 10*time.Second {
+				to *= 2
+			}
+		}
+	}
 }
 
 // tell the server to shut itself down.
@@ -92,6 +118,7 @@ func StartServer(servers []string, me int) *KVPaxos {
 	// Your initialization code here.
 	kv.requests = make(map[string]string)
 	kv.data = make(map[string]string)
+	kv.latestSeq = -1
 
 	rpcs := rpc.NewServer()
 	rpcs.Register(kv)
