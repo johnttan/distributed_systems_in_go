@@ -1,5 +1,7 @@
 package kvpaxos
 
+// This commit method is core of state machine.
+// This is only method that mutates core state.
 func (kv *KVPaxos) Commit(op Op, seq int) string {
 	kv.px.Done(seq)
 	switch op.Op {

@@ -108,6 +108,7 @@ func (kv *KVPaxos) TryUntilCommitted(newOp Op) string {
 func (kv *KVPaxos) AckReq(args *AckArgs, reply *AckReply) error {
 	op := Op{Op: "Ack", UID: args.UID}
 	// Use commit mechanism to clean up cache, with an Ack operation.
+	// This allows acks to propagate throughout nodes.
 	kv.TryUntilCommitted(op)
 
 	return nil
