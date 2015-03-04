@@ -49,13 +49,14 @@ type KVPaxos struct {
 }
 
 func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
-	// Your code here.
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+
 	fmt.Println(kv.data)
 	return nil
 }
 
 func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
-	// Your code here.
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 
