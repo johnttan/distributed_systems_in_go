@@ -53,14 +53,11 @@ func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 	// If requestID from client is greater, it means it is fresh req, otherwise it is old request and cache should be served.
-	if reqID := kv.requests[args.ClientID]; args.ReqID > reqID {
-		newOp := Op{args.Key, "", "Get", args.UID, args.ReqID, args.ClientID}
-		kv.TryUntilCommitted(newOp)
-		result := kv.CommitAll(newOp)
-		reply.Value = result
-	} else {
-		reply.Value = kv.cache[args.ClientID]
-	}
+	newOp := Op{args.Key, "", "Get", args.UID, args.ReqID, args.ClientID}
+	kv.TryUntilCommitted(newOp)
+	result := kv.CommitAll(newOp)
+	reply.Value = result
+
 	return nil
 }
 
@@ -68,14 +65,11 @@ func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 	// If requestID from client is greater, it means it is fresh req, otherwise it is old request and cache should be served.
-	if reqID := kv.requests[args.ClientID]; args.ReqID > reqID {
-		newOp := Op{args.Key, args.Value, args.Op, args.UID, args.ReqID, args.ClientID}
-		kv.TryUntilCommitted(newOp)
-		result := kv.CommitAll(newOp)
-		reply.PreviousValue = result
-	} else {
-		reply.PreviousValue = kv.cache[args.ClientID]
-	}
+	newOp := Op{args.Key, args.Value, args.Op, args.UID, args.ReqID, args.ClientID}
+	kv.TryUntilCommitted(newOp)
+	result := kv.CommitAll(newOp)
+	reply.PreviousValue = result
+
 	return nil
 }
 
