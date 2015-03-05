@@ -12,24 +12,30 @@ func (px *Paxos) Decide(args *DecideArgs, reply *DecideReply) error {
 			px.done[server] = seq
 		}
 	}
+	if args.Prop.Seq > px.highestKnown {
+		px.highestKnown = args.Prop.Seq
+	}
 
 	// Cleanup old map entries
 	min := px.Min()
 
 	for id, _ := range px.acceptors {
 		if id < min {
+			// delete(px.acceptors, id)
 			px.acceptors[id] = nil
 		}
 	}
 
 	for id, _ := range px.proposers {
 		if id < min {
+			// delete(px.proposers, id)
 			px.proposers[id] = nil
 		}
 	}
 
 	for id, _ := range px.log {
 		if id < min {
+			// delete(px.log, id)
 			px.log[id] = nil
 		}
 	}
@@ -49,9 +55,6 @@ func (px *Paxos) Accept(prop *Proposal, reply *AcceptReply) error {
 			px.acceptors[prop.Seq].HighestPrepare = *prop
 			px.acceptors[prop.Seq].HighestAccept = *prop
 			px.acceptors[prop.Seq].Decided = true
-			if prop.Seq > px.highestKnown {
-				px.highestKnown = prop.Seq
-			}
 			px.mu.Unlock()
 			return nil
 		} else {

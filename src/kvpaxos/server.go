@@ -80,8 +80,8 @@ func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 }
 
 func (kv *KVPaxos) TryUntilCommitted(newOp Op) {
-	seq := kv.px.Max() + 1
 	// Keep trying new sequence slots until successfully committed.
+	seq := kv.px.Max() + 1
 	kv.px.Start(seq, newOp)
 	for {
 		to := 5 * time.Millisecond
@@ -90,10 +90,10 @@ func (kv *KVPaxos) TryUntilCommitted(newOp Op) {
 			if status {
 				op := untypedOp.(Op)
 				if op.ReqID == newOp.ReqID && op.ClientID == newOp.ClientID {
-					DPrintf("DONE TRYING", op.Key, op.Op, seq)
+					DPrintf("DONE TRYING", op.Key, op.Op)
 					return
 				} else {
-					seq += 1
+					seq = kv.px.Max() + 1
 					kv.px.Start(seq, newOp)
 				}
 			}
@@ -107,8 +107,13 @@ func (kv *KVPaxos) TryUntilCommitted(newOp Op) {
 
 func (kv *KVPaxos) CommitAll(op Op) string {
 	for i := kv.latestSeq + 1; i <= kv.px.Max(); i++ {
-		// DPrintf("test", op, kv.latestSeq, kv.px.Max(), i)
-		_, untypedOp := kv.px.Status(i)
+		success, untypedOp := kv.px.Status(i)
+		noOp := Op{"", "", "", nrand(), nrand(), nrand()}
+		kv.px.Start(i, noOp)
+		// Retry noOps until log is filled at current position
+		for !success {
+			success, untypedOp = kv.px.Status(i)
+		}
 		newOp := untypedOp.(Op)
 
 		result := kv.Commit(newOp, i)

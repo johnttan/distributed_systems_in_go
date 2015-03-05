@@ -159,6 +159,10 @@ func (px *Paxos) Max() int {
 	return px.highestKnown
 }
 
+func (px *Paxos) GetLog() map[int]interface{} {
+	return px.log
+}
+
 //
 // Min() should return one more than the minimum among z_i,
 // where z_i is the highest number ever passed
