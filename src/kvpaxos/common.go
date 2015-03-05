@@ -13,6 +13,7 @@ type PutAppendArgs struct {
 	Value string
 	Op    string // "Put" or "Append"
 	UID   int64
+	Ack   int64
 }
 
 type PutAppendReply struct {
@@ -23,6 +24,7 @@ type PutAppendReply struct {
 type GetArgs struct {
 	Key string
 	UID int64
+	Ack int64
 }
 
 type GetReply struct {
@@ -30,10 +32,10 @@ type GetReply struct {
 	Value string
 }
 
-type AckArgs struct {
-	UID int64
-}
+// type AckArgs struct {
+// 	UID int64
+// }
 
-type AckReply struct {
-	Err Err
-}
+// type AckReply struct {
+// 	Err Err
+// }

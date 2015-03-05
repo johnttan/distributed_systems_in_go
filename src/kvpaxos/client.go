@@ -8,7 +8,7 @@ import "fmt"
 
 type Clerk struct {
 	servers []string
-	// You will have to modify this struct.
+	ack     int64
 }
 
 func nrand() int64 {
@@ -71,21 +71,20 @@ func (ck *Clerk) Get(key string) string {
 	var args *GetArgs
 	for !success {
 		nextServer = (nextServer + 1) % len(ck.servers)
-		args = &GetArgs{key, id}
+		// On successful completion of clerk request, let server know about success, so it can clean up cache.
+		// ck.ack
+		args = &GetArgs{key, id, ck.ack}
 		reply = &GetReply{}
 
 		success = call(ck.servers[nextServer], "KVPaxos.Get", args, reply)
 	}
-
-	// On successful completion of clerk request, let server know about success, so it can clean up cache.
-	go func() {
-		successAck := false
-		for !successAck {
-			ackArgs := &AckArgs{id}
-			ackReply := &AckReply{}
-			successAck = call(ck.servers[nextServer], "KVPaxos.AckReq", ackArgs, ackReply)
-		}
-	}()
+	ck.ack = id
+	// successAck := false
+	// for !successAck {
+	// 	ackArgs := &AckArgs{id}
+	// 	ackReply := &AckReply{}
+	// 	successAck = call(ck.servers[nextServer], "KVPaxos.AckReq", ackArgs, ackReply)
+	// }
 
 	return reply.Value
 }
@@ -102,22 +101,21 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	var reply *PutAppendReply
 	var args *PutAppendArgs
 	for !success {
-		args = &PutAppendArgs{key, value, op, id}
+		// On successful completion of clerk request, let server know about success, so it can clean up cache.
+		args = &PutAppendArgs{key, value, op, id, ck.ack}
 		reply = &PutAppendReply{}
 
 		success = call(ck.servers[nextServer], "KVPaxos.PutAppend", args, reply)
 		nextServer = (nextServer + 1) % len(ck.servers)
 	}
+	ck.ack = id
 
-	// On successful completion of clerk request, let server know about success, so it can clean up cache.
-	go func() {
-		successAck := false
-		for !successAck {
-			ackArgs := &AckArgs{id}
-			ackReply := &AckReply{}
-			successAck = call(ck.servers[nextServer], "KVPaxos.AckReq", ackArgs, ackReply)
-		}
-	}()
+	// successAck := false
+	// for !successAck {
+	// 	ackArgs := &AckArgs{id}
+	// 	ackReply := &AckReply{}
+	// 	successAck = call(ck.servers[nextServer], "KVPaxos.AckReq", ackArgs, ackReply)
+	// }
 
 	return reply.PreviousValue
 }

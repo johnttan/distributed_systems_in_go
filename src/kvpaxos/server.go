@@ -29,6 +29,7 @@ type Op struct {
 	Value string
 	Op    string
 	UID   int64
+	Ack   int64
 }
 
 type KVPaxos struct {
@@ -52,7 +53,7 @@ func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 	if _, ok := kv.requests[args.UID]; !ok {
-		newOp := Op{args.Key, "", "Get", args.UID}
+		newOp := Op{args.Key, "", "Get", args.UID, args.Ack}
 		result := kv.TryUntilCommitted(newOp)
 		reply.Value = result
 	} else {
@@ -66,7 +67,7 @@ func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	defer kv.mu.Unlock()
 
 	if _, ok := kv.requests[args.UID]; !ok {
-		newOp := Op{args.Key, args.Value, args.Op, args.UID}
+		newOp := Op{args.Key, args.Value, args.Op, args.UID, args.Ack}
 		result := kv.TryUntilCommitted(newOp)
 		reply.PreviousValue = result
 	} else {
@@ -77,8 +78,8 @@ func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 
 func (kv *KVPaxos) TryUntilCommitted(newOp Op) string {
 	seq := kv.latestSeq + 1
-	kv.px.Start(seq, newOp)
 	// Keep trying new sequence slots until successfully committed.
+	kv.px.Start(seq, newOp)
 	for {
 		to := 5 * time.Millisecond
 		for {
@@ -105,14 +106,16 @@ func (kv *KVPaxos) TryUntilCommitted(newOp Op) string {
 	}
 }
 
-func (kv *KVPaxos) AckReq(args *AckArgs, reply *AckReply) error {
-	op := Op{Op: "Ack", UID: args.UID}
-	// Use commit mechanism to clean up cache, with an Ack operation.
-	// This allows acks to propagate throughout nodes.
-	kv.TryUntilCommitted(op)
+// func (kv *KVPaxos) AckReq(args *AckArgs, reply *AckReply) error {
+// 	kv.mu.Lock()
+// 	defer kv.mu.Unlock()
+// 	op := Op{Op: "Ack", UID: args.UID}
+// 	// Use commit mechanism to clean up cache, with an Ack operation.
+// 	// This allows acks to propagate throughout nodes.
+// 	kv.TryUntilCommitted(op)
 
-	return nil
-}
+// 	return nil
+// }
 
 // tell the server to shut itself down.
 // please do not change this function.

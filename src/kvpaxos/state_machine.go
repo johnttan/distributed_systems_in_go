@@ -8,19 +8,18 @@ func (kv *KVPaxos) Commit(op Op, seq int) string {
 	case "Put":
 		kv.data[op.Key] = op.Value
 		kv.requests[op.UID] = ""
+		delete(kv.requests, op.Ack)
 		return ""
 	case "Append":
 		previousValue := kv.data[op.Key]
 		kv.data[op.Key] += op.Value
 		kv.requests[op.UID] = previousValue
+		delete(kv.requests, op.Ack)
 		return previousValue
 	case "Get":
 		kv.requests[op.UID] = kv.data[op.Key]
+		delete(kv.requests, op.Ack)
 		return kv.data[op.Key]
-	case "Ack":
-		// Clean up requests cache.
-		delete(kv.requests, op.UID)
-		return ""
 	default:
 		return ""
 	}
