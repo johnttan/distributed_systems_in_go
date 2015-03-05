@@ -4,7 +4,6 @@ import "net/rpc"
 import "crypto/rand"
 import "math/big"
 import "time"
-import "fmt"
 
 type Clerk struct {
 	servers    []string
@@ -56,7 +55,6 @@ func call(srv string, rpcname string,
 		return true
 	}
 
-	fmt.Println(err)
 	return false
 }
 

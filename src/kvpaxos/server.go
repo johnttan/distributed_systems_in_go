@@ -51,23 +51,26 @@ type KVPaxos struct {
 func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	// If requestID from client is greater, it means it is fresh req, otherwise it is old request and cache should be served.
-	newOp := Op{args.Key, "", "Get", args.ReqID, args.ClientID}
-	kv.TryUntilCommitted(newOp)
-	result := kv.CommitAll(newOp)
-	reply.Value = result
-	DPrintf("GET SENT", args)
+	id, okreq := kv.requests[args.ClientID]
+	if !okreq || args.ReqID > id {
+		newOp := Op{args.Key, "", "Get", args.ReqID, args.ClientID}
+		kv.TryUntilCommitted(newOp)
+		kv.CommitAll(newOp)
+	}
+	reply.Value = kv.cache[args.ClientID]
 	return nil
 }
 
 func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	// If requestID from client is greater, it means it is fresh req, otherwise it is old request and cache should be served.
-	newOp := Op{args.Key, args.Value, args.Op, args.ReqID, args.ClientID}
-	kv.TryUntilCommitted(newOp)
-	result := kv.CommitAll(newOp)
-	reply.PreviousValue = result
+	id, okreq := kv.requests[args.ClientID]
+	if !okreq || args.ReqID > id {
+		newOp := Op{args.Key, args.Value, args.Op, args.ReqID, args.ClientID}
+		kv.TryUntilCommitted(newOp)
+		kv.CommitAll(newOp)
+	}
+	reply.PreviousValue = kv.cache[args.ClientID]
 	return nil
 }
 
@@ -75,28 +78,27 @@ func (kv *KVPaxos) TryUntilCommitted(newOp Op) {
 	// Keep trying new sequence slots until successfully committed.
 	seq := kv.px.Max() + 1
 	kv.px.Start(seq, newOp)
+	to := 5 * time.Millisecond
 	for {
-		to := 5 * time.Millisecond
-		for {
-			status, untypedOp := kv.px.Status(seq)
-			if status {
-				op := untypedOp.(Op)
-				if op.ReqID == newOp.ReqID && op.ClientID == newOp.ClientID {
-					return
-				} else {
-					seq = kv.px.Max() + 1
-					kv.px.Start(seq, newOp)
-				}
+		status, untypedOp := kv.px.Status(seq)
+		if status {
+			op := untypedOp.(Op)
+			if op.ReqID == newOp.ReqID && op.ClientID == newOp.ClientID {
+				return
+			} else {
+				seq += 1
+				// seq = kv.px.Max() + 1
+				kv.px.Start(seq, newOp)
 			}
-			time.Sleep(to)
-			if to < 100*time.Millisecond {
-				to *= 2
-			}
+		}
+		time.Sleep(to)
+		if to < 100*time.Millisecond {
+			to *= 2
 		}
 	}
 }
 
-func (kv *KVPaxos) CommitAll(op Op) string {
+func (kv *KVPaxos) CommitAll(op Op) {
 	for i := kv.latestSeq + 1; i <= kv.px.Max(); i++ {
 		success, untypedOp := kv.px.Status(i)
 		noOp := Op{"", "", "NOOP", nrand(), nrand()}
@@ -108,15 +110,15 @@ func (kv *KVPaxos) CommitAll(op Op) string {
 		}
 		newOp := untypedOp.(Op)
 
-		result := kv.Commit(newOp, i)
+		kv.Commit(newOp, i)
 		kv.latestSeq = i
 
-		// If clientID and reqID is same, it means the Op was committed, else increment seq and try again
+		// If clientID and reqID is same, it means the Op was committed, else increment seq and continue updating state
 		if newOp.ClientID == op.ClientID && newOp.ReqID == op.ReqID {
-			return result
+			return
 		}
 	}
-	return ""
+	return
 }
 
 // tell the server to shut itself down.
