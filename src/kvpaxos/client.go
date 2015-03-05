@@ -67,15 +67,13 @@ func call(srv string, rpcname string,
 //
 func (ck *Clerk) Get(key string) string {
 	ck.reqID++
-	id := nrand()
 	success := false
 	var reply *GetReply
 	var args *GetArgs
 	timeout := 10 * time.Millisecond
 
 	for !success {
-		// On successful completion of clerk request, let server know about success, so it can clean up cache.
-		args = &GetArgs{key, ck.reqID, ck.id, id}
+		args = &GetArgs{key, ck.reqID, ck.id}
 		reply = &GetReply{}
 
 		success = call(ck.servers[ck.nextServer], "KVPaxos.Get", args, reply)
@@ -94,7 +92,6 @@ func (ck *Clerk) Get(key string) string {
 //
 func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	ck.reqID++
-	id := nrand()
 	// fmt.Println("start", key, op)
 	success := false
 	var reply *PutAppendReply
@@ -102,8 +99,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	timeout := 10 * time.Millisecond
 
 	for !success {
-		// On successful completion of clerk request, let server know about success, so it can clean up cache.
-		args = &PutAppendArgs{key, value, op, ck.reqID, ck.id, id}
+		args = &PutAppendArgs{key, value, op, ck.reqID, ck.id}
 		reply = &PutAppendReply{}
 
 		success = call(ck.servers[ck.nextServer], "KVPaxos.PutAppend", args, reply)

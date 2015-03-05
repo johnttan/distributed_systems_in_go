@@ -5,21 +5,21 @@ package kvpaxos
 func (kv *KVPaxos) Commit(op Op, seq int) string {
 	defer kv.px.Done(seq)
 	id, okreq := kv.requests[op.ClientID]
-	if (okreq && op.ReqID > id) || !okreq {
+	if !okreq || op.ReqID > id {
+		kv.requests[op.ClientID] = op.ReqID
 		switch op.Op {
 		case "Put":
 			kv.data[op.Key] = op.Value
-			kv.requests[op.ClientID] = op.ReqID
-			break
+			kv.cache[op.ClientID] = ""
 		case "Append":
 			kv.cache[op.ClientID] = kv.data[op.Key]
 			kv.data[op.Key] += op.Value
-			kv.requests[op.ClientID] = op.ReqID
-			break
 		case "Get":
-			kv.requests[op.ClientID] = op.ReqID
 			kv.cache[op.ClientID] = kv.data[op.Key]
-			break
+		}
+	} else {
+		if op.Op == "Append" {
+			DPrintf("CACHED", op, kv.requests, kv.me)
 		}
 	}
 	value, okcache := kv.cache[op.ClientID]
@@ -29,5 +29,4 @@ func (kv *KVPaxos) Commit(op Op, seq int) string {
 	} else {
 		return ""
 	}
-
 }

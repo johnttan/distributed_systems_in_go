@@ -14,7 +14,6 @@ type PutAppendArgs struct {
 	Op       string // "Put" or "Append"
 	ReqID    int64
 	ClientID int64
-	UID      int64
 }
 
 type PutAppendReply struct {
@@ -26,7 +25,6 @@ type GetArgs struct {
 	Key      string
 	ReqID    int64
 	ClientID int64
-	UID      int64
 }
 
 type GetReply struct {

@@ -11,7 +11,6 @@ import "syscall"
 import "encoding/gob"
 import "math/rand"
 import "time"
-import "errors"
 
 const Debug = 1
 
@@ -29,7 +28,6 @@ type Op struct {
 	Key      string
 	Value    string
 	Op       string
-	UID      int64
 	ReqID    int64
 	ClientID int64
 }
@@ -54,44 +52,36 @@ func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 	// If requestID from client is greater, it means it is fresh req, otherwise it is old request and cache should be served.
-	newOp := Op{args.Key, "", "Get", args.UID, args.ReqID, args.ClientID}
+	newOp := Op{args.Key, "", "Get", args.ReqID, args.ClientID}
 	kv.TryUntilCommitted(newOp)
 	result := kv.CommitAll(newOp)
 	reply.Value = result
-	if !kv.dead {
-		return nil
-	} else {
-		return errors.New("dead")
-	}
+	DPrintf("GET SENT", args)
+	return nil
 }
 
 func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 	// If requestID from client is greater, it means it is fresh req, otherwise it is old request and cache should be served.
-	newOp := Op{args.Key, args.Value, args.Op, args.UID, args.ReqID, args.ClientID}
+	newOp := Op{args.Key, args.Value, args.Op, args.ReqID, args.ClientID}
 	kv.TryUntilCommitted(newOp)
 	result := kv.CommitAll(newOp)
 	reply.PreviousValue = result
-	if !kv.dead {
-		return nil
-	} else {
-		return errors.New("dead")
-	}
+	return nil
 }
 
 func (kv *KVPaxos) TryUntilCommitted(newOp Op) {
 	// Keep trying new sequence slots until successfully committed.
 	seq := kv.px.Max() + 1
 	kv.px.Start(seq, newOp)
-	for !kv.dead {
+	for {
 		to := 5 * time.Millisecond
-		for !kv.dead {
+		for {
 			status, untypedOp := kv.px.Status(seq)
 			if status {
 				op := untypedOp.(Op)
 				if op.ReqID == newOp.ReqID && op.ClientID == newOp.ClientID {
-					DPrintf("DONE TRYING", op.Key, op.Op)
 					return
 				} else {
 					seq = kv.px.Max() + 1
@@ -109,10 +99,10 @@ func (kv *KVPaxos) TryUntilCommitted(newOp Op) {
 func (kv *KVPaxos) CommitAll(op Op) string {
 	for i := kv.latestSeq + 1; i <= kv.px.Max(); i++ {
 		success, untypedOp := kv.px.Status(i)
-		noOp := Op{"", "", "NOOP", nrand(), nrand(), nrand()}
+		noOp := Op{"", "", "NOOP", nrand(), nrand()}
 		kv.px.Start(i, noOp)
 		// Retry noOps until log is filled at current position
-		for !success && !kv.dead {
+		for !success {
 			time.Sleep(50 * time.Millisecond)
 			success, untypedOp = kv.px.Status(i)
 		}
