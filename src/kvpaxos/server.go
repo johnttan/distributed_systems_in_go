@@ -25,11 +25,13 @@ type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
-	Key   string
-	Value string
-	Op    string
-	UID   int64
-	Ack   int64
+	Key      string
+	Value    string
+	Op       string
+	UID      int64
+	Ack      int64
+	ReqID    int64
+	ClientID int64
 }
 
 type KVPaxos struct {
@@ -41,9 +43,9 @@ type KVPaxos struct {
 	px         *paxos.Paxos
 
 	// Your definitions here.
-	requests map[int64]string
-
-	data map[string]string
+	cache    map[int64]string
+	requests map[int64]int64
+	data     map[string]string
 
 	//latest seq applied to data.
 	latestSeq int
@@ -52,12 +54,12 @@ type KVPaxos struct {
 func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	if _, ok := kv.requests[args.UID]; !ok {
-		newOp := Op{args.Key, "", "Get", args.UID, args.Ack}
+	if reqID := kv.requests[args.ClientID]; args.ReqID > reqID {
+		newOp := Op{args.Key, "", "Get", args.UID, args.Ack, args.ReqID, args.ClientID}
 		result := kv.TryUntilCommitted(newOp)
 		reply.Value = result
 	} else {
-		reply.Value = kv.requests[args.UID]
+		reply.Value = kv.cache[args.UID]
 	}
 	return nil
 }
@@ -66,12 +68,12 @@ func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 
-	if _, ok := kv.requests[args.UID]; !ok {
-		newOp := Op{args.Key, args.Value, args.Op, args.UID, args.Ack}
+	if reqID := kv.requests[args.ClientID]; args.ReqID > reqID {
+		newOp := Op{args.Key, args.Value, args.Op, args.UID, args.Ack, args.ReqID, args.ClientID}
 		result := kv.TryUntilCommitted(newOp)
 		reply.PreviousValue = result
 	} else {
-		reply.PreviousValue = kv.requests[args.UID]
+		reply.PreviousValue = kv.cache[args.UID]
 	}
 	return nil
 }
@@ -106,17 +108,6 @@ func (kv *KVPaxos) TryUntilCommitted(newOp Op) string {
 	}
 }
 
-// func (kv *KVPaxos) AckReq(args *AckArgs, reply *AckReply) error {
-// 	kv.mu.Lock()
-// 	defer kv.mu.Unlock()
-// 	op := Op{Op: "Ack", UID: args.UID}
-// 	// Use commit mechanism to clean up cache, with an Ack operation.
-// 	// This allows acks to propagate throughout nodes.
-// 	kv.TryUntilCommitted(op)
-
-// 	return nil
-// }
-
 // tell the server to shut itself down.
 // please do not change this function.
 func (kv *KVPaxos) kill() {
@@ -141,7 +132,8 @@ func StartServer(servers []string, me int) *KVPaxos {
 	kv.me = me
 
 	// Your initialization code here.
-	kv.requests = make(map[int64]string)
+	kv.requests = make(map[int64]int64)
+	kv.cache = make(map[int64]string)
 	kv.data = make(map[string]string)
 	kv.latestSeq = -1
 

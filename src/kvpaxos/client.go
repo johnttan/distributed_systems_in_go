@@ -7,8 +7,11 @@ import "math/big"
 import "fmt"
 
 type Clerk struct {
-	servers []string
-	ack     int64
+	servers    []string
+	ack        int64
+	nextServer int
+	id         int64
+	reqID      int64
 }
 
 func nrand() int64 {
@@ -21,7 +24,7 @@ func nrand() int64 {
 func MakeClerk(servers []string) *Clerk {
 	ck := new(Clerk)
 	ck.servers = servers
-	// You'll have to add code here.
+	ck.id = nrand()
 	return ck
 }
 
@@ -64,27 +67,20 @@ func call(srv string, rpcname string,
 // keeps trying forever in the face of all other errors.
 //
 func (ck *Clerk) Get(key string) string {
+	ck.reqID++
 	id := nrand()
 	success := false
-	nextServer := -1
 	var reply *GetReply
 	var args *GetArgs
 	for !success {
-		nextServer = (nextServer + 1) % len(ck.servers)
 		// On successful completion of clerk request, let server know about success, so it can clean up cache.
-		// ck.ack
-		args = &GetArgs{key, id, ck.ack}
+		args = &GetArgs{key, ck.reqID, ck.id, id, ck.ack}
 		reply = &GetReply{}
 
-		success = call(ck.servers[nextServer], "KVPaxos.Get", args, reply)
+		success = call(ck.servers[ck.nextServer], "KVPaxos.Get", args, reply)
+		ck.nextServer = (ck.nextServer + 1) % len(ck.servers)
 	}
 	ck.ack = id
-	// successAck := false
-	// for !successAck {
-	// 	ackArgs := &AckArgs{id}
-	// 	ackReply := &AckReply{}
-	// 	successAck = call(ck.servers[nextServer], "KVPaxos.AckReq", ackArgs, ackReply)
-	// }
 
 	return reply.Value
 }
@@ -93,29 +89,21 @@ func (ck *Clerk) Get(key string) string {
 // shared by Put and Append.
 //
 func (ck *Clerk) PutAppend(key string, value string, op string) string {
-	// You will have to modify this function.
-	fmt.Println("start", key, op)
+	ck.reqID++
 	id := nrand()
+	fmt.Println("start", key, op)
 	success := false
-	nextServer := 0
 	var reply *PutAppendReply
 	var args *PutAppendArgs
 	for !success {
 		// On successful completion of clerk request, let server know about success, so it can clean up cache.
-		args = &PutAppendArgs{key, value, op, id, ck.ack}
+		args = &PutAppendArgs{key, value, op, ck.reqID, ck.id, id, ck.ack}
 		reply = &PutAppendReply{}
 
-		success = call(ck.servers[nextServer], "KVPaxos.PutAppend", args, reply)
-		nextServer = (nextServer + 1) % len(ck.servers)
+		success = call(ck.servers[ck.nextServer], "KVPaxos.PutAppend", args, reply)
+		ck.nextServer = (ck.nextServer + 1) % len(ck.servers)
 	}
 	ck.ack = id
-
-	// successAck := false
-	// for !successAck {
-	// 	ackArgs := &AckArgs{id}
-	// 	ackReply := &AckReply{}
-	// 	successAck = call(ck.servers[nextServer], "KVPaxos.AckReq", ackArgs, ackReply)
-	// }
 
 	return reply.PreviousValue
 }
