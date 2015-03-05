@@ -109,7 +109,7 @@ func (kv *KVPaxos) TryUntilCommitted(newOp Op) {
 func (kv *KVPaxos) CommitAll(op Op) string {
 	for i := kv.latestSeq + 1; i <= kv.px.Max(); i++ {
 		success, untypedOp := kv.px.Status(i)
-		noOp := Op{"", "", "", nrand(), nrand(), nrand()}
+		noOp := Op{"", "", "NOOP", nrand(), nrand(), nrand()}
 		kv.px.Start(i, noOp)
 		// Retry noOps until log is filled at current position
 		for !success && !kv.dead {

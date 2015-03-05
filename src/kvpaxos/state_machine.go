@@ -4,29 +4,30 @@ package kvpaxos
 // This is the only method that mutates core state.
 func (kv *KVPaxos) Commit(op Op, seq int) string {
 	defer kv.px.Done(seq)
-	switch op.Op {
-	case "Put":
-		if reqID := kv.requests[op.ClientID]; op.ReqID > reqID {
+	id, okreq := kv.requests[op.ClientID]
+	if (okreq && op.ReqID > id) || !okreq {
+		switch op.Op {
+		case "Put":
 			kv.data[op.Key] = op.Value
 			kv.requests[op.ClientID] = op.ReqID
-		}
-		return ""
-	case "Append":
-		var previousValue string
-		if reqID := kv.requests[op.ClientID]; op.ReqID > reqID {
+			break
+		case "Append":
 			kv.cache[op.ClientID] = kv.data[op.Key]
 			kv.data[op.Key] += op.Value
 			kv.requests[op.ClientID] = op.ReqID
-		}
-		previousValue = kv.cache[op.ClientID]
-		return previousValue
-	case "Get":
-		if reqID := kv.requests[op.ClientID]; op.ReqID > reqID {
+			break
+		case "Get":
 			kv.requests[op.ClientID] = op.ReqID
 			kv.cache[op.ClientID] = kv.data[op.Key]
+			break
 		}
-		return kv.cache[op.ClientID]
-	default:
+	}
+	value, okcache := kv.cache[op.ClientID]
+
+	if okcache {
+		return value
+	} else {
 		return ""
 	}
+
 }
