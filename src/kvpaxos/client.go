@@ -8,7 +8,6 @@ import "fmt"
 
 type Clerk struct {
 	servers    []string
-	ack        int64
 	nextServer int
 	id         int64
 	reqID      int64
@@ -72,16 +71,20 @@ func (ck *Clerk) Get(key string) string {
 	success := false
 	var reply *GetReply
 	var args *GetArgs
+	timeout := 10 * time.Millisecond
+
 	for !success {
 		// On successful completion of clerk request, let server know about success, so it can clean up cache.
-		args = &GetArgs{key, ck.reqID, ck.id, id, ck.ack}
+		args = &GetArgs{key, ck.reqID, ck.id, id}
 		reply = &GetReply{}
 
 		success = call(ck.servers[ck.nextServer], "KVPaxos.Get", args, reply)
 		ck.nextServer = (ck.nextServer + 1) % len(ck.servers)
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(timeout)
+		if timeout < 2000*time.Millisecond {
+			timeout *= 2
+		}
 	}
-	ck.ack = id
 
 	return reply.Value
 }
@@ -96,16 +99,20 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	success := false
 	var reply *PutAppendReply
 	var args *PutAppendArgs
+	timeout := 10 * time.Millisecond
+
 	for !success {
 		// On successful completion of clerk request, let server know about success, so it can clean up cache.
-		args = &PutAppendArgs{key, value, op, ck.reqID, ck.id, id, ck.ack}
+		args = &PutAppendArgs{key, value, op, ck.reqID, ck.id, id}
 		reply = &PutAppendReply{}
 
 		success = call(ck.servers[ck.nextServer], "KVPaxos.PutAppend", args, reply)
 		ck.nextServer = (ck.nextServer + 1) % len(ck.servers)
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(timeout)
+		if timeout < 2000*time.Millisecond {
+			timeout *= 2
+		}
 	}
-	ck.ack = id
 
 	return reply.PreviousValue
 }

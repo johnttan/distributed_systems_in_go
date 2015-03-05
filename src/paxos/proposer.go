@@ -103,7 +103,7 @@ func (px *Paxos) Propose(proposer *Proposer) {
 			}
 			proposer.Proposal = currentProp
 		}
-		sleep := time.Millisecond * time.Duration(r.Intn(500))
+		sleep := time.Millisecond * time.Duration(r.Intn(1000))
 		time.Sleep(sleep)
 	}
 }

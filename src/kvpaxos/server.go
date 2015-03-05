@@ -29,7 +29,6 @@ type Op struct {
 	Value    string
 	Op       string
 	UID      int64
-	Ack      int64
 	ReqID    int64
 	ClientID int64
 }
@@ -55,7 +54,7 @@ func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 	defer kv.mu.Unlock()
 	// If requestID from client is greater, it means it is fresh req, otherwise it is old request and cache should be served.
 	if reqID := kv.requests[args.ClientID]; args.ReqID > reqID {
-		newOp := Op{args.Key, "", "Get", args.UID, args.Ack, args.ReqID, args.ClientID}
+		newOp := Op{args.Key, "", "Get", args.UID, args.ReqID, args.ClientID}
 		result := kv.TryUntilCommitted(newOp)
 		reply.Value = result
 	} else {
@@ -69,7 +68,7 @@ func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	defer kv.mu.Unlock()
 	// If requestID from client is greater, it means it is fresh req, otherwise it is old request and cache should be served.
 	if reqID := kv.requests[args.ClientID]; args.ReqID > reqID {
-		newOp := Op{args.Key, args.Value, args.Op, args.UID, args.Ack, args.ReqID, args.ClientID}
+		newOp := Op{args.Key, args.Value, args.Op, args.UID, args.ReqID, args.ClientID}
 		result := kv.TryUntilCommitted(newOp)
 		reply.PreviousValue = result
 	} else {
@@ -91,9 +90,9 @@ func (kv *KVPaxos) TryUntilCommitted(newOp Op) string {
 				// If success, commit log. Allows server to always keep up snapshot with logs.
 				result := kv.Commit(op, seq)
 				kv.latestSeq = seq
-				// If UID is same, it means the Op was committed, else increment seq and try again
-				if op.UID == newOp.UID {
-					// DPrintf("DONE TRYING", op.Key, op.Op)
+				// If clientID and reqID is same, it means the Op was committed, else increment seq and try again
+				if op.ReqID == newOp.ReqID && op.ClientID == newOp.ClientID {
+					DPrintf("DONE TRYING", op.Key, op.Op)
 					return result
 				} else {
 					seq += 1
