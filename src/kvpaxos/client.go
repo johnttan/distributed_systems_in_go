@@ -77,7 +77,7 @@ func (ck *Clerk) Get(key string) string {
 		success = call(ck.servers[ck.nextServer], "KVPaxos.Get", args, reply)
 		ck.nextServer = (ck.nextServer + 1) % len(ck.servers)
 		time.Sleep(timeout)
-		if timeout < 2000*time.Millisecond {
+		if timeout < 1000*time.Millisecond {
 			timeout *= 2
 		}
 	}
@@ -103,7 +103,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 		success = call(ck.servers[ck.nextServer], "KVPaxos.PutAppend", args, reply)
 		ck.nextServer = (ck.nextServer + 1) % len(ck.servers)
 		time.Sleep(timeout)
-		if timeout < 2000*time.Millisecond {
+		if timeout < 1000*time.Millisecond {
 			timeout *= 2
 		}
 	}
