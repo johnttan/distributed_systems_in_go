@@ -35,11 +35,3 @@ type GetReply struct {
 	Err   Err
 	Value string
 }
-
-// type AckArgs struct {
-// 	UID int64
-// }
-
-// type AckReply struct {
-// 	Err Err
-// }

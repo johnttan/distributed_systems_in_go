@@ -3,7 +3,7 @@ package kvpaxos
 import "net/rpc"
 import "crypto/rand"
 import "math/big"
-
+import "time"
 import "fmt"
 
 type Clerk struct {
@@ -79,6 +79,7 @@ func (ck *Clerk) Get(key string) string {
 
 		success = call(ck.servers[ck.nextServer], "KVPaxos.Get", args, reply)
 		ck.nextServer = (ck.nextServer + 1) % len(ck.servers)
+		time.Sleep(200 * time.Millisecond)
 	}
 	ck.ack = id
 
@@ -91,7 +92,7 @@ func (ck *Clerk) Get(key string) string {
 func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	ck.reqID++
 	id := nrand()
-	fmt.Println("start", key, op)
+	// fmt.Println("start", key, op)
 	success := false
 	var reply *PutAppendReply
 	var args *PutAppendArgs
@@ -102,6 +103,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 
 		success = call(ck.servers[ck.nextServer], "KVPaxos.PutAppend", args, reply)
 		ck.nextServer = (ck.nextServer + 1) % len(ck.servers)
+		time.Sleep(200 * time.Millisecond)
 	}
 	ck.ack = id
 

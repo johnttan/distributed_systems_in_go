@@ -42,7 +42,6 @@ type KVPaxos struct {
 	unreliable bool // for testing
 	px         *paxos.Paxos
 
-	// Your definitions here.
 	cache    map[int64]string
 	requests map[int64]int64
 	data     map[string]string
@@ -54,12 +53,13 @@ type KVPaxos struct {
 func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
+	// If requestID from client is greater, it means it is fresh req, otherwise it is old request and cache should be served.
 	if reqID := kv.requests[args.ClientID]; args.ReqID > reqID {
 		newOp := Op{args.Key, "", "Get", args.UID, args.Ack, args.ReqID, args.ClientID}
 		result := kv.TryUntilCommitted(newOp)
 		reply.Value = result
 	} else {
-		reply.Value = kv.cache[args.UID]
+		reply.Value = kv.cache[args.ClientID]
 	}
 	return nil
 }
@@ -67,13 +67,13 @@ func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-
+	// If requestID from client is greater, it means it is fresh req, otherwise it is old request and cache should be served.
 	if reqID := kv.requests[args.ClientID]; args.ReqID > reqID {
 		newOp := Op{args.Key, args.Value, args.Op, args.UID, args.Ack, args.ReqID, args.ClientID}
 		result := kv.TryUntilCommitted(newOp)
 		reply.PreviousValue = result
 	} else {
-		reply.PreviousValue = kv.cache[args.UID]
+		reply.PreviousValue = kv.cache[args.ClientID]
 	}
 	return nil
 }
@@ -91,12 +91,12 @@ func (kv *KVPaxos) TryUntilCommitted(newOp Op) string {
 				// If success, commit log. Allows server to always keep up snapshot with logs.
 				result := kv.Commit(op, seq)
 				kv.latestSeq = seq
-				seq += 1
 				// If UID is same, it means the Op was committed, else increment seq and try again
 				if op.UID == newOp.UID {
-					DPrintf("DONE TRYING", op.Key, op.Op)
+					// DPrintf("DONE TRYING", op.Key, op.Op)
 					return result
 				} else {
+					seq += 1
 					kv.px.Start(seq, newOp)
 				}
 			}
