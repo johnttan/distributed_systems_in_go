@@ -113,8 +113,8 @@ func (kv *KVPaxos) CommitAll(op Op) string {
 		kv.px.Start(i, noOp)
 		// Retry noOps until log is filled at current position
 		for !success && !kv.dead {
-			success, untypedOp = kv.px.Status(i)
 			time.Sleep(50 * time.Millisecond)
+			success, untypedOp = kv.px.Status(i)
 		}
 		newOp := untypedOp.(Op)
 
