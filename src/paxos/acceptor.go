@@ -4,6 +4,10 @@ import "errors"
 
 func (px *Paxos) Decide(args *DecideArgs, reply *DecideReply) error {
 	px.mu.Lock()
+	defer px.mu.Unlock()
+	if px.dead {
+		return errors.New("dead")
+	}
 	// fmt.Println("DECIDED", "SEQ", args.Prop.Seq, "Num", args.Prop.Num, "Id", args.Prop.Id, args.Done, px.me)
 	px.log[args.Prop.Seq] = args.Prop.Value
 	for server, seq := range args.Done {
@@ -41,12 +45,15 @@ func (px *Paxos) Decide(args *DecideArgs, reply *DecideReply) error {
 	}
 
 	reply.Done = px.done
-	px.mu.Unlock()
 	return nil
 }
 
 func (px *Paxos) Accept(prop *Proposal, reply *AcceptReply) error {
 	px.mu.Lock()
+	defer px.mu.Unlock()
+	if px.dead {
+		return errors.New("dead")
+	}
 	reply.Prop = *prop
 	// If proposed num is greater than or equal to highest prepare seen, accept it.
 
@@ -55,32 +62,31 @@ func (px *Paxos) Accept(prop *Proposal, reply *AcceptReply) error {
 			px.acceptors[prop.Seq].HighestPrepare = *prop
 			px.acceptors[prop.Seq].HighestAccept = *prop
 			px.acceptors[prop.Seq].Decided = true
-			px.mu.Unlock()
 			return nil
 		} else {
-			px.mu.Unlock()
 			return errors.New("Not latest prepare")
 		}
 	} else {
 		px.acceptors[prop.Seq] = new(Acceptor)
 		px.acceptors[prop.Seq].Seq = prop.Seq
 		px.acceptors[prop.Seq].HighestPrepare = *prop
-		px.mu.Unlock()
 		return nil
 	}
 }
 
 func (px *Paxos) Prepare(prop *Proposal, reply *PrepareReply) error {
 	px.mu.Lock()
+	defer px.mu.Unlock()
+	if px.dead {
+		return errors.New("dead")
+	}
 	if _, ok := px.acceptors[prop.Seq]; ok && prop.Seq >= px.Min() {
 		reply.Acceptor = *px.acceptors[prop.Seq]
 		// If proposed num > highest prepare seen, accept this prepare
 		if px.acceptors[prop.Seq].HighestPrepare.Num < prop.Num {
 			px.acceptors[prop.Seq].HighestPrepare = *prop
-			px.mu.Unlock()
 			return nil
 		} else {
-			px.mu.Unlock()
 			return errors.New("Old prepare")
 		}
 	} else {
@@ -88,7 +94,6 @@ func (px *Paxos) Prepare(prop *Proposal, reply *PrepareReply) error {
 		px.acceptors[prop.Seq].Seq = prop.Seq
 		px.acceptors[prop.Seq].HighestPrepare = *prop
 		reply.Acceptor = *px.acceptors[prop.Seq]
-		px.mu.Unlock()
 		return nil
 	}
 }

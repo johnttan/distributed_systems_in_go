@@ -11,6 +11,7 @@ import "syscall"
 import "encoding/gob"
 import "math/rand"
 import "time"
+import "errors"
 
 const Debug = 1
 
@@ -57,8 +58,11 @@ func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 	kv.TryUntilCommitted(newOp)
 	result := kv.CommitAll(newOp)
 	reply.Value = result
-
-	return nil
+	if !kv.dead {
+		return nil
+	} else {
+		return errors.New("dead")
+	}
 }
 
 func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
@@ -69,17 +73,20 @@ func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	kv.TryUntilCommitted(newOp)
 	result := kv.CommitAll(newOp)
 	reply.PreviousValue = result
-
-	return nil
+	if !kv.dead {
+		return nil
+	} else {
+		return errors.New("dead")
+	}
 }
 
 func (kv *KVPaxos) TryUntilCommitted(newOp Op) {
 	// Keep trying new sequence slots until successfully committed.
 	seq := kv.px.Max() + 1
 	kv.px.Start(seq, newOp)
-	for {
+	for !kv.dead {
 		to := 5 * time.Millisecond
-		for {
+		for !kv.dead {
 			status, untypedOp := kv.px.Status(seq)
 			if status {
 				op := untypedOp.(Op)
@@ -105,8 +112,9 @@ func (kv *KVPaxos) CommitAll(op Op) string {
 		noOp := Op{"", "", "", nrand(), nrand(), nrand()}
 		kv.px.Start(i, noOp)
 		// Retry noOps until log is filled at current position
-		for !success {
+		for !success && !kv.dead {
 			success, untypedOp = kv.px.Status(i)
+			time.Sleep(50 * time.Millisecond)
 		}
 		newOp := untypedOp.(Op)
 
