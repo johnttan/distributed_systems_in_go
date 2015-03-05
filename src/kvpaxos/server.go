@@ -55,7 +55,8 @@ func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 	// If requestID from client is greater, it means it is fresh req, otherwise it is old request and cache should be served.
 	if reqID := kv.requests[args.ClientID]; args.ReqID > reqID {
 		newOp := Op{args.Key, "", "Get", args.UID, args.ReqID, args.ClientID}
-		result := kv.TryUntilCommitted(newOp)
+		kv.TryUntilCommitted(newOp)
+		result := kv.CommitAll(newOp)
 		reply.Value = result
 	} else {
 		reply.Value = kv.cache[args.ClientID]
@@ -69,7 +70,8 @@ func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	// If requestID from client is greater, it means it is fresh req, otherwise it is old request and cache should be served.
 	if reqID := kv.requests[args.ClientID]; args.ReqID > reqID {
 		newOp := Op{args.Key, args.Value, args.Op, args.UID, args.ReqID, args.ClientID}
-		result := kv.TryUntilCommitted(newOp)
+		kv.TryUntilCommitted(newOp)
+		result := kv.CommitAll(newOp)
 		reply.PreviousValue = result
 	} else {
 		reply.PreviousValue = kv.cache[args.ClientID]
@@ -77,8 +79,8 @@ func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	return nil
 }
 
-func (kv *KVPaxos) TryUntilCommitted(newOp Op) string {
-	seq := kv.latestSeq + 1
+func (kv *KVPaxos) TryUntilCommitted(newOp Op) {
+	seq := kv.px.Max() + 1
 	// Keep trying new sequence slots until successfully committed.
 	kv.px.Start(seq, newOp)
 	for {
@@ -87,13 +89,9 @@ func (kv *KVPaxos) TryUntilCommitted(newOp Op) string {
 			status, untypedOp := kv.px.Status(seq)
 			if status {
 				op := untypedOp.(Op)
-				// If success, commit log. Allows server to always keep up snapshot with logs.
-				result := kv.Commit(op, seq)
-				kv.latestSeq = seq
-				// If clientID and reqID is same, it means the Op was committed, else increment seq and try again
 				if op.ReqID == newOp.ReqID && op.ClientID == newOp.ClientID {
-					DPrintf("DONE TRYING", op.Key, op.Op)
-					return result
+					DPrintf("DONE TRYING", op.Key, op.Op, seq)
+					return
 				} else {
 					seq += 1
 					kv.px.Start(seq, newOp)
@@ -105,6 +103,23 @@ func (kv *KVPaxos) TryUntilCommitted(newOp Op) string {
 			}
 		}
 	}
+}
+
+func (kv *KVPaxos) CommitAll(op Op) string {
+	for i := kv.latestSeq + 1; i <= kv.px.Max(); i++ {
+		// DPrintf("test", op, kv.latestSeq, kv.px.Max(), i)
+		_, untypedOp := kv.px.Status(i)
+		newOp := untypedOp.(Op)
+
+		result := kv.Commit(newOp, i)
+		kv.latestSeq = i
+
+		// If clientID and reqID is same, it means the Op was committed, else increment seq and try again
+		if newOp.ClientID == op.ClientID && newOp.ReqID == op.ReqID {
+			return result
+		}
+	}
+	return ""
 }
 
 // tell the server to shut itself down.

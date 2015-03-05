@@ -248,6 +248,7 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 	px.proposers = make(map[int]*Proposer)
 	px.log = make(map[int]interface{})
 	px.done = make(map[int]int)
+	px.highestKnown = -1
 
 	if rpcs != nil {
 		// caller will create socket &c
