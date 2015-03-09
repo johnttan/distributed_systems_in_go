@@ -54,7 +54,7 @@ func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 	id, okreq := kv.requests[args.ClientID]
 	if !okreq || args.ReqID > id {
 		newOp := Op{args.Key, "", "Get", args.ReqID, args.ClientID}
-		kv.TryUntilCommitted(newOp)
+		kv.TryUntilAccepted(newOp)
 		kv.CommitAll(newOp)
 	}
 	reply.Value = kv.cache[args.ClientID]
@@ -67,15 +67,15 @@ func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	id, okreq := kv.requests[args.ClientID]
 	if !okreq || args.ReqID > id {
 		newOp := Op{args.Key, args.Value, args.Op, args.ReqID, args.ClientID}
-		kv.TryUntilCommitted(newOp)
+		kv.TryUntilAccepted(newOp)
 		kv.CommitAll(newOp)
 	}
 	reply.PreviousValue = kv.cache[args.ClientID]
 	return nil
 }
 
-func (kv *KVPaxos) TryUntilCommitted(newOp Op) {
-	// Keep trying new sequence slots until successfully committed.
+func (kv *KVPaxos) TryUntilAccepted(newOp Op) {
+	// Keep trying new sequence slots until successfully committed to log.
 	seq := kv.px.Max() + 1
 	kv.px.Start(seq, newOp)
 	to := 5 * time.Millisecond
@@ -121,6 +121,7 @@ func (kv *KVPaxos) CommitAll(op Op) string {
 			finalResults = kv.cache[newOp.ClientID]
 		}
 		kv.latestSeq = i
+		kv.px.Done(i)
 	}
 	return finalResults
 }
