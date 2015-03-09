@@ -25,11 +25,13 @@ type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
-	Key      string
-	Value    string
-	Op       string
-	ReqID    int64
-	ClientID int64
+	Key            string
+	Value          string
+	Op             string
+	ReqID          int64
+	ClientID       int64
+	GetReply       *GetReply
+	PutAppendReply *PutAppendReply
 }
 
 type KVPaxos struct {
@@ -40,7 +42,7 @@ type KVPaxos struct {
 	unreliable bool // for testing
 	px         *paxos.Paxos
 
-	cache    map[int64]string
+	cache    map[int64]Op
 	requests map[int64]int64
 	data     map[string]string
 
@@ -51,26 +53,34 @@ type KVPaxos struct {
 func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	id, okreq := kv.requests[args.ClientID]
-	if !okreq || args.ReqID > id {
-		newOp := Op{args.Key, "", "Get", args.ReqID, args.ClientID}
+	if kv.NotDone(args.ClientID, args.ReqID) {
+		newOp := Op{Key: args.Key, Value: "", Op: "Get", ReqID: args.ReqID, ClientID: args.ClientID}
 		kv.TryUntilAccepted(newOp)
 		kv.CommitAll(newOp)
 	}
-	reply.Value = kv.cache[args.ClientID]
+	// Old request, don't need to return anything. Client has moved on
+	if kv.cache[args.ClientID].ReqID > args.ReqID {
+		return nil
+	}
+	DPrintf("CACHED FOR GET IS %+v, currentArgs %+v", kv.cache[args.ClientID], args)
+	reply.Value = kv.cache[args.ClientID].GetReply.Value
 	return nil
 }
 
 func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	id, okreq := kv.requests[args.ClientID]
-	if !okreq || args.ReqID > id {
-		newOp := Op{args.Key, args.Value, args.Op, args.ReqID, args.ClientID}
+	if kv.NotDone(args.ClientID, args.ReqID) {
+		newOp := Op{Key: args.Key, Value: args.Value, Op: args.Op, ReqID: args.ReqID, ClientID: args.ClientID}
 		kv.TryUntilAccepted(newOp)
 		kv.CommitAll(newOp)
 	}
-	reply.PreviousValue = kv.cache[args.ClientID]
+	// Old request, don't need to return anything. Client has moved on
+	if kv.cache[args.ClientID].ReqID > args.ReqID {
+		return nil
+	}
+	DPrintf("CACHED FOR PUTAPPEND IS %+v, currentArgs %+v", kv.cache[args.ClientID], args)
+	reply.PreviousValue = kv.cache[args.ClientID].PutAppendReply.PreviousValue
 	return nil
 }
 
@@ -98,8 +108,12 @@ func (kv *KVPaxos) TryUntilAccepted(newOp Op) {
 	}
 }
 
-func (kv *KVPaxos) CommitAll(op Op) string {
-	var finalResults string
+func (kv *KVPaxos) NotDone(clientid int64, reqid int64) bool {
+	id, okreq := kv.requests[clientid]
+	return !okreq || reqid > id
+}
+
+func (kv *KVPaxos) CommitAll(op Op) {
 	for i := kv.latestSeq + 1; i <= kv.px.Max(); i++ {
 		success, untypedOp := kv.px.Status(i)
 		noOp := Op{}
@@ -110,20 +124,15 @@ func (kv *KVPaxos) CommitAll(op Op) string {
 			success, untypedOp = kv.px.Status(i)
 		}
 		newOp := untypedOp.(Op)
-		if id, okreq := kv.requests[newOp.ClientID]; !okreq || newOp.ReqID > id {
+		if kv.NotDone(newOp.ClientID, newOp.ReqID) {
 			result := kv.Commit(newOp)
 			kv.requests[newOp.ClientID] = newOp.ReqID
+			DPrintf("COMMITTING, current OP IS  %+v, wanted OP IS %+v", newOp, op)
 			kv.cache[newOp.ClientID] = result
-			if newOp.ClientID == op.ClientID && newOp.ReqID == op.ReqID {
-				finalResults = result
-			}
-		} else {
-			finalResults = kv.cache[newOp.ClientID]
 		}
 		kv.latestSeq = i
 		kv.px.Done(i)
 	}
-	return finalResults
 }
 
 // tell the server to shut itself down.
@@ -151,7 +160,7 @@ func StartServer(servers []string, me int) *KVPaxos {
 
 	// Your initialization code here.
 	kv.requests = make(map[int64]int64)
-	kv.cache = make(map[int64]string)
+	kv.cache = make(map[int64]Op)
 	kv.data = make(map[string]string)
 	kv.latestSeq = -1
 
