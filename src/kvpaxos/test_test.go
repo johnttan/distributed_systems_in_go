@@ -428,10 +428,11 @@ func TestUnreliable(t *testing.T) {
 				time.Sleep(100 * time.Millisecond)
 				testedKey := myck.Get(key)
 				if testedKey != nv {
-					t.Fatalf("wrong value %v, wanted %v at %v, %+v", ov, pv, key, *myck)
+					t.Fatalf("wrong value %v, wanted %v at %v, %+v", testedKey, pv, key, *myck)
 				}
-				if myck.Get(key) != nv {
-					t.Fatalf("wrong value %v, wanted %v at %v, %+v", ov, pv, key, *myck)
+				testedKey2 := myck.Get(key)
+				if testedKey2 != nv {
+					t.Fatalf("wrong value %v, wanted %v at %v, %+v", testedKey2, pv, key, *myck)
 				}
 				ok = true
 			}(cli)
