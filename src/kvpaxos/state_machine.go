@@ -10,9 +10,8 @@ func (kv *KVPaxos) Commit(op Op) Op {
 		op.PutAppendReply = &PutAppendReply{}
 	case "Append":
 		// DPrintf("Applying APPEND, currentState: STATE: %+v, OP: %+v, ME: %v", kv.data[op.Key], op, kv.me)
-		before := kv.data[op.Key]
+		op.PutAppendReply = &PutAppendReply{PreviousValue: kv.data[op.Key]}
 		kv.data[op.Key] += op.Value
-		op.PutAppendReply = &PutAppendReply{PreviousValue: before}
 	case "Get":
 		op.GetReply = &GetReply{Value: kv.data[op.Key]}
 	}

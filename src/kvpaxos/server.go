@@ -62,7 +62,7 @@ func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 	if kv.cache[args.ClientID].ReqID > args.ReqID {
 		return nil
 	}
-	// DPrintf("CACHED FOR GET IS %+v, currentArgs %+v", kv.cache[args.ClientID], args)
+	DPrintf("CACHED FOR GET IS %+v, currentArgs %+v", kv.cache[args.ClientID], args)
 	reply.Value = kv.cache[args.ClientID].GetReply.Value
 	return nil
 }
@@ -79,7 +79,7 @@ func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	if kv.cache[args.ClientID].ReqID > args.ReqID {
 		return nil
 	}
-	// DPrintf("CACHED FOR PUTAPPEND IS %+v, currentArgs %+v", kv.cache[args.ClientID], args)
+	DPrintf("CACHED FOR PUTAPPEND IS %+v, currentArgs %+v", kv.cache[args.ClientID], args)
 	reply.PreviousValue = kv.cache[args.ClientID].PutAppendReply.PreviousValue
 	return nil
 }
