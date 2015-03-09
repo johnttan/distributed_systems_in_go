@@ -55,9 +55,9 @@ func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 	if !okreq || args.ReqID > id {
 		newOp := Op{args.Key, "", "Get", args.ReqID, args.ClientID}
 		kv.TryUntilCommitted(newOp)
-		kv.CommitAll(newOp)
+		kv.CommitAll()
 	}
-	reply.Value = kv.cache[args.ClientID]
+	reply.Value = kv.cache[args.ReqID]
 	return nil
 }
 
@@ -68,9 +68,9 @@ func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	if !okreq || args.ReqID > id {
 		newOp := Op{args.Key, args.Value, args.Op, args.ReqID, args.ClientID}
 		kv.TryUntilCommitted(newOp)
-		kv.CommitAll(newOp)
+		kv.CommitAll()
 	}
-	reply.PreviousValue = kv.cache[args.ClientID]
+	reply.PreviousValue = kv.cache[args.ReqID]
 	return nil
 }
 
@@ -98,22 +98,26 @@ func (kv *KVPaxos) TryUntilCommitted(newOp Op) {
 	}
 }
 
-func (kv *KVPaxos) CommitAll(op Op) {
+func (kv *KVPaxos) CommitAll() {
 	for i := kv.latestSeq + 1; i <= kv.px.Max(); i++ {
 		success, untypedOp := kv.px.Status(i)
 		noOp := Op{}
 		kv.px.Start(i, noOp)
 		// Retry noOps until log is filled at current position
-		for !success {
+		for !success || untypedOp == nil {
 			time.Sleep(20 * time.Millisecond)
 			success, untypedOp = kv.px.Status(i)
 		}
 		newOp := untypedOp.(Op)
-
-		kv.Commit(newOp, i)
+		// if reqID, okReq := kv.requests[newOp.ClientID]; !okReq || newOp.ReqID > reqID {
+		result, clientID := kv.Commit(newOp)
+		kv.px.Done(i)
 		kv.latestSeq = i
+		kv.cache[clientID] = result
+		kv.requests[clientID] = newOp.ReqID
+		DPrintf("RESULT %v", result)
+		// }
 	}
-	return
 }
 
 // tell the server to shut itself down.

@@ -4,7 +4,6 @@ var execSync = require('child_process').execSync;
 var fs = require('fs');
 var numTest = parseInt(process.argv[2]);
 var removeTemps = process.argv[3];
-var keepFailed = process.argv[4];
 
 try {
   execSync('rm *.txt');
@@ -48,15 +47,11 @@ for(var i=0;i<numTest;i++){
 
 function combineFiles(files){
   files.forEach(function(el){
-    if(!keepFailed || (keepFailed && failedFiles[el])){
+    if(failedFiles[el]){
       fs.readFile(el, function(err, data){
         if(!err){
           // Append to master logs.
           fs.appendFile('master.txt', data);
-        }
-        // Remove temp file after done
-        if(removeTemps){
-          exec('rm ' + el);
         }
       })
     }

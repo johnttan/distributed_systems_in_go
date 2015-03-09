@@ -25,22 +25,22 @@ func (px *Paxos) Decide(args *DecideArgs, reply *DecideReply) error {
 
 	for id, _ := range px.acceptors {
 		if id < min {
-			// delete(px.acceptors, id)
-			px.acceptors[id] = nil
+			// px.acceptors[id] = nil
+			delete(px.acceptors, id)
 		}
 	}
 
 	for id, _ := range px.proposers {
 		if id < min {
-			// delete(px.proposers, id)
-			px.proposers[id] = nil
+			delete(px.acceptors, id)
+			// px.proposers[id] = nil
 		}
 	}
 
 	for id, _ := range px.log {
 		if id < min {
-			// delete(px.log, id)
-			px.log[id] = nil
+			delete(px.log, id)
+			// px.log[id] = nil
 		}
 	}
 
