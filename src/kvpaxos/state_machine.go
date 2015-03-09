@@ -10,9 +10,11 @@ func (kv *KVPaxos) Commit(op Op, seq int) {
 		kv.requests[op.ClientID] = op.ReqID
 		switch op.Op {
 		case "Put":
+			DPrintf("Applying PUT, currentState: OP: %+v, ME: %v", op, kv.me)
 			kv.data[op.Key] = op.Value
 			kv.cache[op.ClientID] = ""
 		case "Append":
+			DPrintf("Applying APPEND, currentState: OP: %+v, ME: %v", op, kv.me)
 			kv.cache[op.ClientID] = kv.data[op.Key]
 			kv.data[op.Key] += op.Value
 		case "Get":
