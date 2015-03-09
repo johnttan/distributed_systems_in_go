@@ -98,7 +98,8 @@ func (kv *KVPaxos) TryUntilCommitted(newOp Op) {
 	}
 }
 
-func (kv *KVPaxos) CommitAll(op Op) {
+func (kv *KVPaxos) CommitAll(op Op) string {
+	var finalResults string
 	for i := kv.latestSeq + 1; i <= kv.px.Max(); i++ {
 		success, untypedOp := kv.px.Status(i)
 		noOp := Op{}
@@ -109,11 +110,19 @@ func (kv *KVPaxos) CommitAll(op Op) {
 			success, untypedOp = kv.px.Status(i)
 		}
 		newOp := untypedOp.(Op)
-
-		kv.Commit(newOp, i)
+		if id, okreq := kv.requests[newOp.ClientID]; !okreq || newOp.ReqID > id {
+			result := kv.Commit(newOp)
+			kv.requests[newOp.ClientID] = newOp.ReqID
+			kv.cache[newOp.ClientID] = result
+			if newOp.ClientID == op.ClientID && newOp.ReqID == op.ReqID {
+				finalResults = result
+			}
+		} else {
+			finalResults = kv.cache[newOp.ClientID]
+		}
 		kv.latestSeq = i
 	}
-	return
+	return finalResults
 }
 
 // tell the server to shut itself down.
