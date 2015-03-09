@@ -1,12 +1,16 @@
 var spawn = require('child_process').spawn;
+var exec = require('child_process').exec;
+var execSync = require('child_process').execSync;
 var fs = require('fs');
 var numTest = parseInt(process.argv[2]);
+var removeTemps = process.argv[2];
+execSync('rm *.txt');
 
 fs.writeFileSync('master.txt', '');
 var files = [];
 var closed = 0;
 for(var i=0;i<numTest;i++){
-  var fileName = 'testfiles' + Math.random().toString(26) + i.toString() + '.txt';
+  var fileName = 'TEST'+ i.toString() + Math.random().toString(26)  + '.txt';
   files.push(fileName);
   (function(fileName){
     var test = spawn('go', ['test']);
@@ -30,6 +34,15 @@ for(var i=0;i<numTest;i++){
 
 function combineFiles(files){
   files.forEach(function(el){
-    fs.appendFile('master.txt', fs.readFileSync(el))
+    fs.readFile(el, function(err, data){
+      if(!err){
+        // Append to master logs.
+        fs.appendFile('master.txt', data);
+      }
+      // Remove temp file after done
+      if(removeTemps){
+        exec('rm ' + el);
+      }
+    })
   })
 }
