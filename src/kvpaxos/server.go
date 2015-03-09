@@ -92,7 +92,7 @@ func (kv *KVPaxos) TryUntilCommitted(newOp Op) {
 			}
 		}
 		time.Sleep(to)
-		if to < 200*time.Millisecond {
+		if to < 100*time.Millisecond {
 			to *= 2
 		}
 	}
@@ -105,7 +105,7 @@ func (kv *KVPaxos) CommitAll(op Op) {
 		kv.px.Start(i, noOp)
 		// Retry noOps until log is filled at current position
 		for !success {
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(20 * time.Millisecond)
 			success, untypedOp = kv.px.Status(i)
 		}
 		newOp := untypedOp.(Op)
