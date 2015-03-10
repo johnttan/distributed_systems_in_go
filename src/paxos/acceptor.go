@@ -41,9 +41,6 @@ func (px *Paxos) Decide(args *DecideArgs, reply *DecideReply) error {
 func (px *Paxos) Accept(prop *Proposal, reply *AcceptReply) error {
 	px.mu.Lock()
 	defer px.mu.Unlock()
-	if px.dead {
-		return errors.New("dead")
-	}
 	reply.Prop = *prop
 	// If proposed num is greater than or equal to highest prepare seen, accept it.
 
@@ -67,10 +64,7 @@ func (px *Paxos) Accept(prop *Proposal, reply *AcceptReply) error {
 func (px *Paxos) Prepare(prop *Proposal, reply *PrepareReply) error {
 	px.mu.Lock()
 	defer px.mu.Unlock()
-	if px.dead {
-		return errors.New("dead")
-	}
-	if _, ok := px.acceptors[prop.Seq]; ok && prop.Seq >= px.Min() {
+	if _, ok := px.acceptors[prop.Seq]; ok {
 		reply.Acceptor = *px.acceptors[prop.Seq]
 		// If proposed num > highest prepare seen, accept this prepare
 		if px.acceptors[prop.Seq].HighestPrepare.Num < prop.Num {

@@ -71,7 +71,7 @@ type Proposer struct {
 	Decided  bool
 }
 
-type Acceptor struct {
+type Instance struct {
 	Seq            int
 	HighestPrepare Proposal
 	HighestAccept  Proposal
@@ -89,9 +89,9 @@ type Paxos struct {
 
 	// acceptors/proposers/log indexed by proposal num
 	acceptors map[int]*Acceptor
-	log       map[int]interface{}
+	log       map[int]Instance{}
 	// done is indexed by px.me index
-	done map[int]int
+	done []int
 }
 
 //
@@ -230,8 +230,8 @@ func (px *Paxos) Min() int {
 // it should not contact other Paxos peers.
 //
 func (px *Paxos) Status(seq int) (bool, interface{}) {
-	if _, ok := px.log[seq]; ok {
-		return true, px.log[seq]
+	if _, ok := px.log[seq]; ok && px.log[seq].Decided {
+		return true, px.log[seq].Proposal.Value
 	} else {
 		return false, nil
 	}
@@ -262,7 +262,7 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 	// Your initialization code here.
 	px.acceptors = make(map[int]*Acceptor)
 	px.log = make(map[int]interface{})
-	px.done = make(map[int]int)
+	px.done = make([]int)
 
 	if rpcs != nil {
 		// caller will create socket &c

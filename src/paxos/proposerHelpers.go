@@ -18,6 +18,5 @@ func (px *Paxos) AcceptPeer(peer string, proposer *Proposer, currentProp Proposa
 	} else {
 		call(peer, "Paxos.Accept", currentProp, reply)
 	}
-
 	done <- reply
 }
