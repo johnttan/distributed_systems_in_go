@@ -16,9 +16,6 @@ func (px *Paxos) Decide(args *DecideArgs, reply *DecideReply) error {
 			px.done[server] = seq
 		}
 	}
-	if args.Prop.Seq > px.highestKnown {
-		px.highestKnown = args.Prop.Seq
-	}
 
 	// Cleanup old map entries
 	min := px.Min()
@@ -27,13 +24,6 @@ func (px *Paxos) Decide(args *DecideArgs, reply *DecideReply) error {
 		if id < min {
 			// delete(px.acceptors, id)
 			px.acceptors[id] = nil
-		}
-	}
-
-	for id, _ := range px.proposers {
-		if id < min {
-			// delete(px.proposers, id)
-			px.proposers[id] = nil
 		}
 	}
 
@@ -85,8 +75,10 @@ func (px *Paxos) Prepare(prop *Proposal, reply *PrepareReply) error {
 		// If proposed num > highest prepare seen, accept this prepare
 		if px.acceptors[prop.Seq].HighestPrepare.Num < prop.Num {
 			px.acceptors[prop.Seq].HighestPrepare = *prop
+			reply.Response = PREPARE_OK
 			return nil
 		} else {
+			reply.Response = PREPARE_REJECT
 			return errors.New("Old prepare")
 		}
 	} else {
@@ -94,6 +86,7 @@ func (px *Paxos) Prepare(prop *Proposal, reply *PrepareReply) error {
 		px.acceptors[prop.Seq].Seq = prop.Seq
 		px.acceptors[prop.Seq].HighestPrepare = *prop
 		reply.Acceptor = *px.acceptors[prop.Seq]
+		reply.Response = PREPARE_OK
 		return nil
 	}
 }

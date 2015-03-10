@@ -31,8 +31,18 @@ import "sync"
 import "fmt"
 import "math/rand"
 
+const (
+	PREPARE_OK     = "PrepareOK"
+	PREPARE_REJECT = "PrepareReject"
+	ACCEPT_OK      = "AcceptOK"
+	ACCEPT_REJECT  = "AcceptReject"
+)
+
+type Response string
+
 type PrepareReply struct {
 	Acceptor Acceptor
+	Response Response
 }
 
 type AcceptReply struct {
@@ -78,10 +88,8 @@ type Paxos struct {
 	me         int // index into peers[]
 
 	// acceptors/proposers/log indexed by proposal num
-	acceptors    map[int]*Acceptor
-	proposers    map[int]*Proposer
-	log          map[int]interface{}
-	highestKnown int
+	acceptors map[int]*Acceptor
+	log       map[int]interface{}
 	// done is indexed by px.me index
 	done map[int]int
 }
@@ -129,12 +137,10 @@ func call(srv string, name string, args interface{}, reply interface{}) bool {
 // is reached.
 //
 func (px *Paxos) Start(seq int, v interface{}) {
-	if _, ok := px.proposers[seq]; !ok || seq >= px.Min() {
-		// Create new proposer instance for sequence number, then start proposing.
-		newProposal := Proposal{0, px.me, v, seq}
-		px.proposers[seq] = &Proposer{seq, newProposal, false}
-		go px.Propose(px.proposers[seq])
-	}
+	// Create new proposer instance for sequence number, then start proposing.
+	newProposal := Proposal{0, px.me, v, seq}
+	newProposer := &Proposer{seq, newProposal, false}
+	go px.Propose(newProposer)
 }
 
 //
@@ -156,7 +162,13 @@ func (px *Paxos) Done(seq int) {
 //
 func (px *Paxos) Max() int {
 	// Your code here.
-	return px.highestKnown
+	max := -1
+	for seq, _ := range px.log {
+		if seq > max {
+			max = seq
+		}
+	}
+	return max
 }
 
 func (px *Paxos) GetLog() map[int]interface{} {
@@ -249,10 +261,8 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 
 	// Your initialization code here.
 	px.acceptors = make(map[int]*Acceptor)
-	px.proposers = make(map[int]*Proposer)
 	px.log = make(map[int]interface{})
 	px.done = make(map[int]int)
-	px.highestKnown = -1
 
 	if rpcs != nil {
 		// caller will create socket &c
