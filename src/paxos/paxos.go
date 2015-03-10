@@ -130,6 +130,9 @@ func call(srv string, name string, args interface{}, reply interface{}) bool {
 
 	return false
 }
+func (px *Paxos) newInstance(seq int) {
+	px.log[seq] = &Instance{Seq: seq}
+}
 
 //
 // the application wants paxos to start agreement on

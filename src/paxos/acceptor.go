@@ -52,6 +52,7 @@ func (px *Paxos) Accept(prop *Proposal, reply *AcceptReply) error {
 func (px *Paxos) Prepare(prop *Proposal, reply *PrepareReply) error {
 	px.mu.Lock()
 	defer px.mu.Unlock()
+	px.newInstance(prop.Seq)
 	reply.Instance = px.log[prop.Seq]
 	// If proposed num > highest prepare seen, accept this prepare
 	if px.log[prop.Seq].HighestPrepareNum < prop.Num {
@@ -63,7 +64,6 @@ func (px *Paxos) Prepare(prop *Proposal, reply *PrepareReply) error {
 		reply.Response = PREPARE_REJECT
 		return errors.New("Old prepare")
 	}
-	px.newInstance(prop.Seq, prop.Num, prop.Value)
 	reply.Response = PREPARE_OK
 	return nil
 }
