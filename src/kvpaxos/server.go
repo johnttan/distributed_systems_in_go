@@ -25,13 +25,11 @@ type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
-	Key            string
-	Value          string
-	Op             string
-	ReqID          int64
-	ClientID       int64
-	GetReply       *GetReply
-	PutAppendReply *PutAppendReply
+	Key      string
+	Value    string
+	Op       string
+	ReqID    int64
+	ClientID int64
 }
 
 type KVPaxos struct {
@@ -42,11 +40,10 @@ type KVPaxos struct {
 	unreliable bool // for testing
 	px         *paxos.Paxos
 
-	cache       map[int64]Op
-	requests    map[int64]int64
-	data        map[string]string
-	start_chan  chan int
-	requestLock sync.Mutex
+	cache    map[int64]string
+	requests map[int64]int64
+	data     map[string]string
+
 	//latest seq applied to data.
 	latestSeq int
 }
@@ -54,149 +51,79 @@ type KVPaxos struct {
 func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	if kv.NotDone(args.ClientID, args.ReqID) {
-		newOp := Op{Key: args.Key, Value: "", Op: "Get", ReqID: args.ReqID, ClientID: args.ClientID}
-		i := kv.TryUntilAccepted(newOp)
-		// DPrintf("SENDING TO CHAN, val %v", i)
-		kv.start_chan <- i
+	id, okreq := kv.requests[args.ClientID]
+	if !okreq || args.ReqID > id {
+		newOp := Op{args.Key, "", "Get", args.ReqID, args.ClientID}
+		kv.TryUntilAccepted(newOp)
+		kv.CommitAll(newOp)
 	}
-
-	// DPrintf("NOT DOING GET, %+v", args)
-	for kv.NotDone(args.ClientID, args.ReqID) {
-		time.Sleep(20 * time.Millisecond)
-	}
-
-	kv.requestLock.Lock()
-	defer kv.requestLock.Unlock()
-	// Old request, don't need to return anything. Client has moved on
-	if kv.cache[args.ClientID].ReqID > args.ReqID {
-		return nil
-	}
-	DPrintf("CACHED FOR GET IS %+v, currentArgs %+v", kv.cache[args.ClientID].GetReply, args)
-	reply.Value = kv.cache[args.ClientID].GetReply.Value
+	reply.Value = kv.cache[args.ClientID]
 	return nil
 }
 
 func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	if args.Value == "15" {
-		DPrintf("GOT APPEND, args=%+v, reqs=%+v", args, kv.requests)
+	id, okreq := kv.requests[args.ClientID]
+	if !okreq || args.ReqID > id {
+		newOp := Op{args.Key, args.Value, args.Op, args.ReqID, args.ClientID}
+		kv.TryUntilAccepted(newOp)
+		kv.CommitAll(newOp)
 	}
-	if kv.NotDone(args.ClientID, args.ReqID) {
-		newOp := Op{Key: args.Key, Value: args.Value, Op: args.Op, ReqID: args.ReqID, ClientID: args.ClientID}
-		if args.Value == "15" {
-			DPrintf("TRYING THIS APPEND, newOp=%+v", newOp)
-		}
-		i := kv.TryUntilAccepted(newOp)
-		DPrintf("SENDING TO CHAN, val %v, op: %+v", i, newOp)
-		kv.start_chan <- i
-	}
-
-	DPrintf("NOT DOING PUTAPPEND %+v", args)
-	for kv.NotDone(args.ClientID, args.ReqID) {
-		time.Sleep(20 * time.Millisecond)
-	}
-	DPrintf("DONE WITH PUTAPPEND %+v", kv.cache[args.ClientID])
-	// Old request, don't need to return anything. Client has moved on
-	kv.requestLock.Lock()
-	defer kv.requestLock.Unlock()
-	if kv.cache[args.ClientID].ReqID > args.ReqID {
-		return nil
-	}
-	// DPrintf("CACHED FOR PUTAPPEND IS %+v, currentArgs %+v", kv.cache[args.ClientID].PutAppendReply, args)
-	reply.PreviousValue = kv.cache[args.ClientID].PutAppendReply.PreviousValue
+	reply.PreviousValue = kv.cache[args.ClientID]
 	return nil
 }
 
-func (kv *KVPaxos) TryUntilAccepted(newOp Op) int {
+func (kv *KVPaxos) TryUntilAccepted(newOp Op) {
 	// Keep trying new sequence slots until successfully committed to log.
 	seq := kv.px.Max() + 1
 	kv.px.Start(seq, newOp)
-	to := 10 * time.Millisecond
+	to := 5 * time.Millisecond
 	for {
 		status, untypedOp := kv.px.Status(seq)
-		// DPrintf("TRYING THIS OP=%+v , in seq=%v", newOp, seq)
 		if status {
-			// DPrintf("GOT OP ACCEPTED %+v, current newOp = %+v, seq = %v, min = %v, requests = %+v", untypedOp, newOp, seq, kv.px.Min(), kv.requests)
-			if untypedOp != nil {
-				op := untypedOp.(Op)
-				if op.ReqID == newOp.ReqID && op.ClientID == newOp.ClientID {
-					// DPrintf("GOT THIS TO GO THROUGH %v", seq)
-					return seq
-				}
+			op := untypedOp.(Op)
+			if op.ReqID == newOp.ReqID && op.ClientID == newOp.ClientID {
+				return
+			} else {
+				seq += 1
+				// seq = kv.px.Max() + 1
+				kv.px.Start(seq, newOp)
 			}
-			seq++
-
-			kv.px.Start(seq, newOp)
 		}
 		time.Sleep(to)
-		if to < 50*time.Millisecond {
+		if to < 100*time.Millisecond {
 			to *= 2
 		}
 	}
 }
 
-func (kv *KVPaxos) NotDone(clientid int64, reqid int64) bool {
-	kv.requestLock.Lock()
-	defer kv.requestLock.Unlock()
-	id, okreq := kv.requests[clientid]
-	notDone := !okreq || reqid > id
-	return notDone
-}
-
-// func (kv *KVPaxos) CommitAll(op Op) {
-// 	for i := kv.latestSeq + 1; i <= kv.px.Max(); i++ {
-// 		success, untypedOp := kv.px.Status(i)
-// 		noOp := Op{}
-// 		kv.px.Start(i, noOp)
-// 		// Retry noOps until log is filled at current position
-// 		for !success {
-// 			time.Sleep(20 * time.Millisecond)
-// 			success, untypedOp = kv.px.Status(i)
-// 		}
-// 		newOp := untypedOp.(Op)
-// 		if kv.NotDone(newOp.ClientID, newOp.ReqID) {
-// 			result := kv.Commit(newOp)
-// 			kv.requests[newOp.ClientID] = newOp.ReqID
-// 			// DPrintf("COMMITTING, current OP IS  %+v, wanted OP IS %+v", newOp, op)
-// 			kv.cache[newOp.ClientID] = result
-// 		}
-// 		kv.latestSeq = i
-// 		kv.px.Done(i)
-// 	}
-// }
-
-func (kv *KVPaxos) TryRepeatedly() {
-	i := 0
-	for {
-		select {
-		case wantToStart := <-kv.start_chan:
-			// DPrintf("STARTING NOOP FOR %v wantoStart, i%v", wantToStart, i)
-			for seq := i; seq < wantToStart; seq++ {
-				noOp := Op{}
-				kv.px.Start(seq, noOp)
-			}
-		default:
-			success, untypedOp := kv.px.Status(i)
-			// Retry noOps until log is filled at current position
-			if success {
-				newOp := untypedOp.(Op)
-				if kv.NotDone(newOp.ClientID, newOp.ReqID) {
-					result := kv.Commit(newOp)
-					kv.requestLock.Lock()
-					kv.requests[newOp.ClientID] = newOp.ReqID
-					DPrintf("COMMITTING, current OP IS  %+v, result:%+v", newOp, result)
-					kv.cache[newOp.ClientID] = result
-					kv.requestLock.Unlock()
-					kv.latestSeq = i
-					kv.px.Done(i)
-				}
-				i++
-			}
-			time.Sleep(50 * time.Millisecond)
+func (kv *KVPaxos) CommitAll(op Op) string {
+	var finalResults string
+	for i := kv.latestSeq + 1; i <= kv.px.Max(); i++ {
+		success, untypedOp := kv.px.Status(i)
+		noOp := Op{}
+		kv.px.Start(i, noOp)
+		// Retry noOps until log is filled at current position
+		for !success {
+			time.Sleep(20 * time.Millisecond)
+			success, untypedOp = kv.px.Status(i)
 		}
+		newOp := untypedOp.(Op)
+		if id, okreq := kv.requests[newOp.ClientID]; !okreq || newOp.ReqID > id {
+			result := kv.Commit(newOp)
+			kv.requests[newOp.ClientID] = newOp.ReqID
+			kv.cache[newOp.ClientID] = result
+			if newOp.ClientID == op.ClientID && newOp.ReqID == op.ReqID {
+				finalResults = result
+			}
+		} else {
+			finalResults = kv.cache[newOp.ClientID]
+		}
+		kv.latestSeq = i
+		kv.px.Done(i)
 	}
+	return finalResults
 }
 
 // tell the server to shut itself down.
@@ -224,16 +151,15 @@ func StartServer(servers []string, me int) *KVPaxos {
 
 	// Your initialization code here.
 	kv.requests = make(map[int64]int64)
-	kv.cache = make(map[int64]Op)
+	kv.cache = make(map[int64]string)
 	kv.data = make(map[string]string)
 	kv.latestSeq = -1
-	kv.start_chan = make(chan int)
 
 	rpcs := rpc.NewServer()
 	rpcs.Register(kv)
 
 	kv.px = paxos.Make(servers, me, rpcs)
-	go kv.TryRepeatedly()
+
 	os.Remove(servers[me])
 	l, e := net.Listen("unix", servers[me])
 	if e != nil {

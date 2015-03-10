@@ -298,7 +298,7 @@ func TestPartition(t *testing.T) {
 	fmt.Printf("Test: Completion after heal ...\n")
 
 	part(t, tag, nservers, []int{0, 2, 3, 4}, []int{1}, []int{})
-	for iters := 0; iters < 50; iters++ {
+	for iters := 0; iters < 30; iters++ {
 		if done0 {
 			break
 		}
@@ -428,11 +428,10 @@ func TestUnreliable(t *testing.T) {
 				time.Sleep(100 * time.Millisecond)
 				testedKey := myck.Get(key)
 				if testedKey != nv {
-					t.Fatalf("wrong value %v, wanted %v at %v, %+v", testedKey, pv, key, *myck)
+					t.Fatalf("wrong value %v, wanted %v at %v, %+v", ov, pv, key, *myck)
 				}
-				testedKey2 := myck.Get(key)
-				if testedKey2 != nv {
-					t.Fatalf("wrong value %v, wanted %v at %v, %+v", testedKey2, pv, key, *myck)
+				if myck.Get(key) != nv {
+					t.Fatalf("wrong value %v, wanted %v at %v, %+v", ov, pv, key, *myck)
 				}
 				ok = true
 			}(cli)
