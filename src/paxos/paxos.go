@@ -41,21 +41,23 @@ const (
 type Response string
 
 type PrepareReply struct {
-	Acceptor Acceptor
+	Instance *Instance
 	Response Response
 }
 
 type AcceptReply struct {
-	Prop Proposal
+	Instance *Instance
+	Response Response
 }
 
 type DecideReply struct {
-	Done map[int]int
+	Done     []int
+	Response Response
 }
 
 type DecideArgs struct {
 	Prop Proposal
-	Done map[int]int
+	Done []int
 }
 
 type Proposal struct {
@@ -72,10 +74,12 @@ type Proposer struct {
 }
 
 type Instance struct {
-	Seq            int
-	HighestPrepare Proposal
-	HighestAccept  Proposal
-	Decided        bool
+	Seq                 int
+	HighestPrepareValue interface{}
+	HighestPrepareNum   int
+	HighestAcceptValue  interface{}
+	HighestAcceptNum    int
+	Decided             bool
 }
 
 type Paxos struct {
@@ -87,9 +91,7 @@ type Paxos struct {
 	peers      []string
 	me         int // index into peers[]
 
-	// acceptors/proposers/log indexed by proposal num
-	acceptors map[int]*Acceptor
-	log       map[int]Instance{}
+	log map[int]*Instance
 	// done is indexed by px.me index
 	done []int
 }
@@ -231,7 +233,7 @@ func (px *Paxos) Min() int {
 //
 func (px *Paxos) Status(seq int) (bool, interface{}) {
 	if _, ok := px.log[seq]; ok && px.log[seq].Decided {
-		return true, px.log[seq].Proposal.Value
+		return true, px.log[seq].HighestAcceptValue
 	} else {
 		return false, nil
 	}
@@ -260,8 +262,7 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 	px.me = me
 
 	// Your initialization code here.
-	px.acceptors = make(map[int]*Acceptor)
-	px.log = make(map[int]interface{})
+	px.log = make(map[int]*Instance{})
 	px.done = make([]int)
 
 	if rpcs != nil {
