@@ -12,7 +12,7 @@ import "encoding/gob"
 import "math/rand"
 import "time"
 
-const Debug = 1
+const Debug = 0
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
@@ -54,10 +54,10 @@ func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 	id, okreq := kv.requests[args.ClientID]
 	if !okreq || args.ReqID > id {
 		newOp := Op{args.Key, "", "Get", args.ReqID, args.ClientID}
-		kv.TryUntilCommitted(newOp)
-		kv.CommitAll()
+		kv.TryUntilAccepted(newOp)
+		kv.CommitAll(newOp)
 	}
-	reply.Value = kv.cache[args.ReqID]
+	reply.Value = kv.cache[args.ClientID]
 	return nil
 }
 
@@ -67,15 +67,15 @@ func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	id, okreq := kv.requests[args.ClientID]
 	if !okreq || args.ReqID > id {
 		newOp := Op{args.Key, args.Value, args.Op, args.ReqID, args.ClientID}
-		kv.TryUntilCommitted(newOp)
-		kv.CommitAll()
+		kv.TryUntilAccepted(newOp)
+		kv.CommitAll(newOp)
 	}
-	reply.PreviousValue = kv.cache[args.ReqID]
+	reply.PreviousValue = kv.cache[args.ClientID]
 	return nil
 }
 
-func (kv *KVPaxos) TryUntilCommitted(newOp Op) {
-	// Keep trying new sequence slots until successfully committed.
+func (kv *KVPaxos) TryUntilAccepted(newOp Op) {
+	// Keep trying new sequence slots until successfully committed to log.
 	seq := kv.px.Max() + 1
 	kv.px.Start(seq, newOp)
 	to := 5 * time.Millisecond
@@ -98,26 +98,32 @@ func (kv *KVPaxos) TryUntilCommitted(newOp Op) {
 	}
 }
 
-func (kv *KVPaxos) CommitAll() {
+func (kv *KVPaxos) CommitAll(op Op) string {
+	var finalResults string
 	for i := kv.latestSeq + 1; i <= kv.px.Max(); i++ {
 		success, untypedOp := kv.px.Status(i)
 		noOp := Op{}
 		kv.px.Start(i, noOp)
 		// Retry noOps until log is filled at current position
-		for !success || untypedOp == nil {
+		for !success {
 			time.Sleep(20 * time.Millisecond)
 			success, untypedOp = kv.px.Status(i)
 		}
 		newOp := untypedOp.(Op)
-		// if reqID, okReq := kv.requests[newOp.ClientID]; !okReq || newOp.ReqID > reqID {
-		result, clientID := kv.Commit(newOp)
-		kv.px.Done(i)
+		if id, okreq := kv.requests[newOp.ClientID]; !okreq || newOp.ReqID > id {
+			result := kv.Commit(newOp)
+			kv.requests[newOp.ClientID] = newOp.ReqID
+			kv.cache[newOp.ClientID] = result
+			if newOp.ClientID == op.ClientID && newOp.ReqID == op.ReqID {
+				finalResults = result
+			}
+		} else {
+			finalResults = kv.cache[newOp.ClientID]
+		}
 		kv.latestSeq = i
-		kv.cache[clientID] = result
-		kv.requests[clientID] = newOp.ReqID
-		DPrintf("RESULT %v", result)
-		// }
+		kv.px.Done(i)
 	}
+	return finalResults
 }
 
 // tell the server to shut itself down.

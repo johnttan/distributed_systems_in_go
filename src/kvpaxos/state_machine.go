@@ -2,22 +2,19 @@ package kvpaxos
 
 // This commit method is core of state machine.
 // This is the only method that mutates core state.
-func (kv *KVPaxos) Commit(op Op) (string, int64) {
-	var result string
+func (kv *KVPaxos) Commit(op Op) string {
 	switch op.Op {
 	case "Put":
-		// DPrintf("Applying PUT, currentState: STATE: %+v, OP: %+v, ME: %v, requests: %+v, okreq: %v, idBeforeChange: %v", kv.data[op.Key], op, kv.me, kv.requests)
+		DPrintf("Applying PUT, currentState: STATE: %+v, OP: %+v, ME: %v", kv.data[op.Key], op, kv.me)
 		kv.data[op.Key] = op.Value
-		result = ""
-		// DPrintf("After STATE: %+v, me: %v", kv.data[op.Key], kv.me)
+		return ""
 	case "Append":
-		// DPrintf("Applying APPEND, currentState: STATE: %+v, OP: %+v, ME: %v, requests: %+v, okreq: %v, idBeforeChange: %v", kv.data[op.Key], op, kv.me, kv.requests)
-		result = kv.data[op.Key]
+		DPrintf("Applying APPEND, currentState: STATE: %+v, OP: %+v, ME: %v", kv.data[op.Key], op, kv.me)
+		before := kv.data[op.Key]
 		kv.data[op.Key] += op.Value
-		// DPrintf("After STATE: %+v, me: %v", kv.data[op.Key], kv.me)
+		return before
 	case "Get":
-		// DPrintf("Applying GET, currentState: STATE: %+v, OP: %+v, ME: %v, requests: %+v, okreq: %v, idBeforeChange: %v", kv.data[op.Key], op, kv.me, kv.requests)
-		result = kv.data[op.Key]
+		return kv.data[op.Key]
 	}
-	return result, op.ClientID
+	return ""
 }

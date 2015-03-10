@@ -27,45 +27,70 @@ import "log"
 import "os"
 import "syscall"
 import "sync"
-
+import "math"
 import "fmt"
 import "math/rand"
 
+const (
+	PREPARE_OK     = "PrepareOK"
+	PREPARE_REJECT = "PrepareReject"
+	ACCEPT_OK      = "AcceptOK"
+	ACCEPT_REJECT  = "AcceptReject"
+)
+
+type Response string
+
+const debug = true
+
+func PR(format string, args ...interface{}) {
+	if debug {
+		fmt.Printf(format, args...)
+	}
+}
+
+type PrepareArgs struct {
+	Seq          int
+	PrepareValue interface{}
+	PrepareNum   int
+}
 type PrepareReply struct {
-	Acceptor Acceptor
+	Response           Response
+	HighestAcceptNum   int
+	HighestAcceptValue interface{}
+	Done               int
+}
+
+type AcceptArgs struct {
+	AcceptNum   int
+	AcceptValue interface{}
+	Seq         int
 }
 
 type AcceptReply struct {
-	Prop Proposal
+	Response Response
+	Done     int
 }
 
 type DecideReply struct {
-	Done map[int]int
+	Response Response
+	Done     int
 }
 
 type DecideArgs struct {
-	Prop Proposal
-	Done map[int]int
+	Done        []int
+	DecideValue interface{}
+	DecideNum   int
+	Seq         int
 }
 
-type Proposal struct {
-	Num   int
-	Id    int
-	Value interface{}
-	Seq   int
-}
-
-type Proposer struct {
-	Seq      int
-	Proposal Proposal
-	Decided  bool
-}
-
-type Acceptor struct {
-	Seq            int
-	HighestPrepare Proposal
-	HighestAccept  Proposal
-	Decided        bool
+type Instance struct {
+	Seq                 int
+	HighestPrepareValue interface{}
+	HighestPrepareNum   int
+	HighestAcceptValue  interface{}
+	HighestAcceptNum    int
+	DecidedValue        interface{}
+	Decided             bool
 }
 
 type Paxos struct {
@@ -77,13 +102,9 @@ type Paxos struct {
 	peers      []string
 	me         int // index into peers[]
 
-	// acceptors/proposers/log indexed by proposal num
-	acceptors    map[int]*Acceptor
-	proposers    map[int]*Proposer
-	log          map[int]interface{}
-	highestKnown int
+	log map[int]*Instance
 	// done is indexed by px.me index
-	done map[int]int
+	done []int
 }
 
 //
@@ -120,6 +141,12 @@ func call(srv string, name string, args interface{}, reply interface{}) bool {
 
 	return false
 }
+func (px *Paxos) newInstance(seq int, where string) {
+	if _, ok := px.log[seq]; !ok {
+		// fmt.Println("NEW INSTANCE", seq, px.log[seq], where)
+		px.log[seq] = &Instance{Seq: seq, HighestPrepareNum: -1, HighestAcceptNum: -1, Decided: false}
+	}
+}
 
 //
 // the application wants paxos to start agreement on
@@ -129,12 +156,7 @@ func call(srv string, name string, args interface{}, reply interface{}) bool {
 // is reached.
 //
 func (px *Paxos) Start(seq int, v interface{}) {
-	if _, ok := px.proposers[seq]; !ok || seq >= px.Min() {
-		// Create new proposer instance for sequence number, then start proposing.
-		newProposal := Proposal{0, px.me, v, seq}
-		px.proposers[seq] = &Proposer{seq, newProposal, false}
-		go px.Propose(px.proposers[seq])
-	}
+	go px.Propose(seq, v)
 }
 
 //
@@ -144,9 +166,13 @@ func (px *Paxos) Start(seq int, v interface{}) {
 // see the comments for Min() for more explanation.
 //
 func (px *Paxos) Done(seq int) {
+	px.mu.Lock()
+	defer px.mu.Unlock()
 	// fmt.Println("CALLED DONE", seq, "ME", px.me)
 	// Your code here.
-	px.done[px.me] = seq
+	if seq > px.done[px.me] {
+		px.done[px.me] = seq
+	}
 }
 
 //
@@ -155,11 +181,18 @@ func (px *Paxos) Done(seq int) {
 // this peer.
 //
 func (px *Paxos) Max() int {
-	// Your code here.
-	return px.highestKnown
+	px.mu.Lock()
+	defer px.mu.Unlock()
+	max := -1
+	for seq, _ := range px.log {
+		if seq > max {
+			max = seq
+		}
+	}
+	return max
 }
 
-func (px *Paxos) GetLog() map[int]interface{} {
+func (px *Paxos) GetLog() map[int]*Instance {
 	return px.log
 }
 
@@ -193,20 +226,19 @@ func (px *Paxos) GetLog() map[int]interface{} {
 //
 func (px *Paxos) Min() int {
 	// You code here.
-	min := px.done[0]
+	min := math.MaxUint32
 	// fmt.Println("CALLED MIN", px.done, px.me, len(px.done))
 	//If all nodes have responded with initial dones.
-	if len(px.done) == len(px.peers) {
-		for _, seq := range px.done {
-			// fmt.Println("iterating through dones", seq, "ME", px.me)
-			if seq < min {
-				min = seq
-			}
+	for _, seq := range px.done {
+		if seq < min {
+			min = seq
 		}
-	} else {
-		return 0
 	}
-
+	for id, _ := range px.log {
+		if id < min {
+			delete(px.log, id)
+		}
+	}
 	return min + 1
 }
 
@@ -218,8 +250,13 @@ func (px *Paxos) Min() int {
 // it should not contact other Paxos peers.
 //
 func (px *Paxos) Status(seq int) (bool, interface{}) {
-	if _, ok := px.log[seq]; ok {
-		return true, px.log[seq]
+	px.mu.Lock()
+	defer px.mu.Unlock()
+	if seq < px.Min() {
+		return false, nil
+	}
+	if _, ok := px.log[seq]; ok && px.log[seq].Decided {
+		return true, px.log[seq].DecidedValue
 	} else {
 		return false, nil
 	}
@@ -248,12 +285,11 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 	px.me = me
 
 	// Your initialization code here.
-	px.acceptors = make(map[int]*Acceptor)
-	px.proposers = make(map[int]*Proposer)
-	px.log = make(map[int]interface{})
-	px.done = make(map[int]int)
-	px.highestKnown = -1
-
+	px.log = make(map[int]*Instance)
+	px.done = make([]int, len(px.peers))
+	for i, _ := range px.done {
+		px.done[i] = -1
+	}
 	if rpcs != nil {
 		// caller will create socket &c
 		rpcs.Register(px)

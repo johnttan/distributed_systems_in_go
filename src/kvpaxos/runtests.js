@@ -3,7 +3,6 @@ var exec = require('child_process').exec;
 var execSync = require('child_process').execSync;
 var fs = require('fs');
 var numTest = parseInt(process.argv[2]);
-var removeTemps = process.argv[3];
 
 try {
   execSync('rm *.txt');

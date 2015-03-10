@@ -1,39 +1,22 @@
 package paxos
 
-func (px *Paxos) PreparePeer(peer string, proposer *Proposer, done chan *PrepareReply) {
+func (px *Paxos) PreparePeer(peer string, args *PrepareArgs) *PrepareReply {
 	reply := &PrepareReply{}
-	success := false
 	// Run local function when calling self RPC
 	if peer == px.peers[px.me] {
-		err := px.Prepare(&proposer.Proposal, reply)
-		if err == nil {
-			success = true
-		}
+		px.Prepare(args, reply)
 	} else {
-		success = call(peer, "Paxos.Prepare", &proposer.Proposal, reply)
+		call(peer, "Paxos.Prepare", args, reply)
 	}
-	if success {
-		done <- reply
-		return
-	}
-	done <- nil
+	return reply
 }
 
-func (px *Paxos) AcceptPeer(peer string, proposer *Proposer, currentProp Proposal, done chan *AcceptReply) {
-	reply := &AcceptReply{currentProp}
-	success := false
+func (px *Paxos) AcceptPeer(peer string, args *AcceptArgs) *AcceptReply {
+	reply := &AcceptReply{}
 	if peer == px.peers[px.me] {
-		err := px.Accept(&currentProp, reply)
-		if err == nil {
-			success = true
-		}
+		px.Accept(args, reply)
 	} else {
-		success = call(peer, "Paxos.Accept", currentProp, reply)
+		call(peer, "Paxos.Accept", args, reply)
 	}
-
-	if success {
-		done <- reply
-		return
-	}
-	done <- nil
+	return reply
 }
