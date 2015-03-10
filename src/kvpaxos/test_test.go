@@ -298,7 +298,7 @@ func TestPartition(t *testing.T) {
 	fmt.Printf("Test: Completion after heal ...\n")
 
 	part(t, tag, nservers, []int{0, 2, 3, 4}, []int{1}, []int{})
-	for iters := 0; iters < 30; iters++ {
+	for iters := 0; iters < 50; iters++ {
 		if done0 {
 			break
 		}
