@@ -27,7 +27,7 @@ import "log"
 import "os"
 import "syscall"
 import "sync"
-
+import "math"
 import "fmt"
 import "math/rand"
 
@@ -40,37 +40,47 @@ const (
 
 type Response string
 
+const debug = true
+
+func PR(format string, args ...interface{}) {
+	if debug {
+		fmt.Printf(format, args...)
+	}
+}
+
+type PrepareArgs struct {
+	Seq          int
+	PrepareValue interface{}
+	PrepareNum   int
+}
 type PrepareReply struct {
-	Instance *Instance
-	Response Response
+	Response           Response
+	HighestAcceptNum   int
+	HighestAcceptValue interface{}
+	Done               int
+}
+
+type AcceptArgs struct {
+	AcceptNum   int
+	AcceptValue interface{}
+	Seq         int
 }
 
 type AcceptReply struct {
-	Instance *Instance
 	Response Response
+	Done     int
 }
 
 type DecideReply struct {
-	Done     []int
 	Response Response
+	Done     int
 }
 
 type DecideArgs struct {
-	Prop Proposal
-	Done []int
-}
-
-type Proposal struct {
-	Num   int
-	Id    int
-	Value interface{}
-	Seq   int
-}
-
-type Proposer struct {
-	Seq      int
-	Proposal Proposal
-	Decided  bool
+	Done        []int
+	DecideValue interface{}
+	DecideNum   int
+	Seq         int
 }
 
 type Instance struct {
@@ -79,6 +89,7 @@ type Instance struct {
 	HighestPrepareNum   int
 	HighestAcceptValue  interface{}
 	HighestAcceptNum    int
+	DecidedValue        interface{}
 	Decided             bool
 }
 
@@ -130,8 +141,11 @@ func call(srv string, name string, args interface{}, reply interface{}) bool {
 
 	return false
 }
-func (px *Paxos) newInstance(seq int) {
-	px.log[seq] = &Instance{Seq: seq}
+func (px *Paxos) newInstance(seq int, where string) {
+	if _, ok := px.log[seq]; !ok {
+		// fmt.Println("NEW INSTANCE", seq, px.log[seq], where)
+		px.log[seq] = &Instance{Seq: seq, HighestPrepareNum: -1, HighestAcceptNum: -1, Decided: false}
+	}
 }
 
 //
@@ -142,10 +156,7 @@ func (px *Paxos) newInstance(seq int) {
 // is reached.
 //
 func (px *Paxos) Start(seq int, v interface{}) {
-	// Create new proposer instance for sequence number, then start proposing.
-	newProposal := Proposal{0, px.me, v, seq}
-	newProposer := &Proposer{seq, newProposal, false}
-	go px.Propose(newProposer)
+	go px.Propose(seq, v)
 }
 
 //
@@ -155,9 +166,13 @@ func (px *Paxos) Start(seq int, v interface{}) {
 // see the comments for Min() for more explanation.
 //
 func (px *Paxos) Done(seq int) {
+	px.mu.Lock()
+	defer px.mu.Unlock()
 	// fmt.Println("CALLED DONE", seq, "ME", px.me)
 	// Your code here.
-	px.done[px.me] = seq
+	if seq > px.done[px.me] {
+		px.done[px.me] = seq
+	}
 }
 
 //
@@ -166,7 +181,8 @@ func (px *Paxos) Done(seq int) {
 // this peer.
 //
 func (px *Paxos) Max() int {
-	// Your code here.
+	px.mu.Lock()
+	defer px.mu.Unlock()
 	max := -1
 	for seq, _ := range px.log {
 		if seq > max {
@@ -176,7 +192,7 @@ func (px *Paxos) Max() int {
 	return max
 }
 
-func (px *Paxos) GetLog() map[int]interface{} {
+func (px *Paxos) GetLog() map[int]*Instance {
 	return px.log
 }
 
@@ -210,20 +226,19 @@ func (px *Paxos) GetLog() map[int]interface{} {
 //
 func (px *Paxos) Min() int {
 	// You code here.
-	min := px.done[0]
+	min := math.MaxUint32
 	// fmt.Println("CALLED MIN", px.done, px.me, len(px.done))
 	//If all nodes have responded with initial dones.
-	if len(px.done) == len(px.peers) {
-		for _, seq := range px.done {
-			// fmt.Println("iterating through dones", seq, "ME", px.me)
-			if seq < min {
-				min = seq
-			}
+	for _, seq := range px.done {
+		if seq < min {
+			min = seq
 		}
-	} else {
-		return 0
 	}
-
+	for id, _ := range px.log {
+		if id < min {
+			delete(px.log, id)
+		}
+	}
 	return min + 1
 }
 
@@ -235,8 +250,13 @@ func (px *Paxos) Min() int {
 // it should not contact other Paxos peers.
 //
 func (px *Paxos) Status(seq int) (bool, interface{}) {
+	px.mu.Lock()
+	defer px.mu.Unlock()
+	if seq < px.Min() {
+		return false, nil
+	}
 	if _, ok := px.log[seq]; ok && px.log[seq].Decided {
-		return true, px.log[seq].HighestAcceptValue
+		return true, px.log[seq].DecidedValue
 	} else {
 		return false, nil
 	}
@@ -265,9 +285,11 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 	px.me = me
 
 	// Your initialization code here.
-	px.log = make(map[int]*Instance{})
-	px.done = make([]int)
-
+	px.log = make(map[int]*Instance)
+	px.done = make([]int, len(px.peers))
+	for i, _ := range px.done {
+		px.done[i] = -1
+	}
 	if rpcs != nil {
 		// caller will create socket &c
 		rpcs.Register(px)

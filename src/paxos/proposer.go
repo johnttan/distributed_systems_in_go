@@ -1,95 +1,95 @@
 package paxos
 
-import "fmt"
-
 import "time"
 import "math/rand"
 
-func (px *Paxos) Propose(proposer *Proposer) {
-	fmt.Print("")
+func (px *Paxos) Propose(seq int, value interface{}) {
 	// If fails at any step in chain, will increment proposal number and try again.
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	counter := 0
-	for !proposer.Decided {
-		counter++
-		proposer.Proposal.Num = counter*len(px.peers) + px.me
+	decided, _ := px.Status(seq)
+	for !decided {
+		prepare_num := int(time.Now().UnixNano())*len(px.peers) + px.me
 		// fmt.Println("PROPOSING", proposer.Proposal.Num, px.me)
-		currentProp := proposer.Proposal
 		numSuccess := 0
-
-		donePrepareChans := make([]chan *PrepareReply, len(px.peers))
-		for pIndex, peer := range px.peers {
-			prepareChan := make(chan *PrepareReply)
-			donePrepareChans[pIndex] = prepareChan
-			go px.PreparePeer(peer, proposer, prepareChan)
-		}
-
-		// Block and wait for all calls to finish
 		highestAcceptNum := 0
-		for _, channel := range donePrepareChans {
-			reply := <-channel
+		highestAcceptValue := value
+
+		// donePrepareChans := make([]chan *PrepareReply, len(px.peers))
+		for pIndex, peer := range px.peers {
+			// prepareChan := make(chan *PrepareReply)
+			// donePrepareChans[pIndex] = prepareChan
+			reply := px.PreparePeer(peer, &PrepareArgs{PrepareNum: prepare_num, Seq: seq, PrepareValue: value})
+			if px.done[pIndex] < reply.Done {
+				px.done[pIndex] = reply.Done
+			}
 			if reply.Response == PREPARE_OK {
 				numSuccess++
-				if reply.Acceptor.HighestAccept.Num > highestAcceptNum {
-					currentProp.Value = reply.Acceptor.HighestAccept.Value
-					highestAcceptNum = reply.Acceptor.HighestAccept.Num
+				if reply.HighestAcceptNum > highestAcceptNum {
+					highestAcceptNum = reply.HighestAcceptNum
+					highestAcceptValue = reply.HighestAcceptValue
 				}
 			}
 		}
+
+		// Block and wait for all calls to finish
+		// for pIndex, channel := range donePrepareChans {
+		// 	reply := <-channel
+		// 	px.done[pIndex] = reply.Done
+		// 	if reply.Response == PREPARE_OK {
+		// 		numSuccess++
+		// 		if reply.HighestAcceptNum > highestAcceptNum {
+		// 			highestAcceptNum = reply.HighestAcceptNum
+		// 			highestAcceptValue = reply.HighestAcceptValue
+		// 		}
+		// 	}
+		// }
 		if numSuccess < len(px.peers)/2+1 {
 			sleep := time.Millisecond * time.Duration(r.Intn(1000))
 			time.Sleep(sleep + 500*time.Millisecond)
 			continue
 		}
-		// fmt.Println(doneProposing, "DONE")
+		// fmt.Println("DONE PROPOSING")
 
 		// if true, succeeded, if false, failed
 
 		numSuccess = 0
-		doneAcceptChans := make([]chan *AcceptReply, len(px.peers))
+		// doneAcceptChans := make([]chan *AcceptReply, len(px.peers))
 		for pIndex, peer := range px.peers {
-			acceptChan := make(chan *AcceptReply)
-			doneAcceptChans[pIndex] = acceptChan
-			go px.AcceptPeer(peer, proposer, currentProp, acceptChan)
-		}
+			// acceptChan := make(chan *AcceptReply)
+			// doneAcceptChans[pIndex] = acceptChan
 
-		for _, channel := range doneAcceptChans {
-			reply := <-channel
-			if reply != nil {
+			reply := px.AcceptPeer(peer, &AcceptArgs{AcceptNum: prepare_num, AcceptValue: highestAcceptValue, Seq: seq})
+			if px.done[pIndex] < reply.Done {
+				px.done[pIndex] = reply.Done
+			}
+			if reply.Response == ACCEPT_OK {
 				numSuccess++
 			}
 		}
+
+		// for _, channel := range doneAcceptChans {
+		// 	reply := <-channel
+		// }
 
 		if numSuccess < len(px.peers)/2+1 {
 			sleep := time.Millisecond * time.Duration(r.Intn(1000))
 			time.Sleep(sleep + 500*time.Millisecond)
 			continue
 		}
-		for _, peer := range px.peers {
-			if px.peers[px.me] == peer {
-				go func() {
-					reply := &DecideReply{}
-					args := &DecideArgs{currentProp, px.done}
-					px.Decide(args, reply)
-				}()
-			} else {
-				go func(peer string) {
-					reply := &DecideReply{}
-					args := &DecideArgs{currentProp, px.done}
-					success := call(peer, "Paxos.Decide", args, reply)
-					if success {
-						//Update local done map.
-						for server, seq := range reply.Done {
-							if px.done[server] <= seq {
-								px.done[server] = seq
-							}
-						}
-					}
-				}(peer)
 
+		decided = true
+
+		for _, peer := range px.peers {
+			args := &DecideArgs{DecideValue: highestAcceptValue, Done: px.done, DecideNum: highestAcceptNum, Seq: seq}
+
+			if px.peers[px.me] == peer {
+				reply := &DecideReply{}
+				px.Decide(args, reply)
+			} else {
+				reply := &DecideReply{}
+				call(peer, "Paxos.Decide", args, reply)
 			}
-			proposer.Decided = true
-			proposer.Proposal = currentProp
 		}
+		// PR("log, %+v, v", px.log[seq], seq)
 	}
 }
