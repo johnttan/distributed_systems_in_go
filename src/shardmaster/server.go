@@ -20,14 +20,22 @@ type ShardMaster struct {
 	unreliable bool // for testing
 	px         *paxos.Paxos
 
-	configs []Config // indexed by config num
-}
+	configs  []Config // indexed by config num
+	cache    map[int64]string
+	requests map[int64]int64
+	data     map[string]string
 
+	//latest seq applied to data.
+	latestSeq int
+}
 
 type Op struct {
-	// Your data here.
+	Key      string
+	Value    string
+	Op       string
+	ReqID    int64
+	ClientID int64
 }
-
 
 func (sm *ShardMaster) Join(args *JoinArgs, reply *JoinReply) error {
 	// Your code here.
@@ -51,6 +59,58 @@ func (sm *ShardMaster) Query(args *QueryArgs, reply *QueryReply) error {
 	// Your code here.
 
 	return nil
+}
+
+func (sm *ShardMaster) TryUntilAccepted(newOp Op) {
+	// Keep trying new sequence slots until successfully committed to log.
+	seq := sm.px.Max() + 1
+	sm.px.Start(seq, newOp)
+	to := 5 * time.Millisecond
+	for {
+		status, untypedOp := sm.px.Status(seq)
+		if status {
+			op := untypedOp.(Op)
+			if op.ReqID == newOp.ReqID && op.ClientID == newOp.ClientID {
+				return
+			} else {
+				seq += 1
+				// seq = sm.px.Max() + 1
+				sm.px.Start(seq, newOp)
+			}
+		}
+		time.Sleep(to)
+		if to < 100*time.Millisecond {
+			to *= 2
+		}
+	}
+}
+
+func (sm *ShardMaster) CommitAll(op Op) string {
+	var finalResults string
+	for i := sm.latestSeq + 1; i <= sm.px.Max(); i++ {
+		success, untypedOp := sm.px.Status(i)
+		noOp := Op{}
+		sm.px.Start(i, noOp)
+		// Retry noOps until log is filled at current position
+		for !success {
+			time.Sleep(20 * time.Millisecond)
+			success, untypedOp = sm.px.Status(i)
+		}
+		newOp := untypedOp.(Op)
+		if id, okreq := sm.requests[newOp.ClientID]; !okreq || newOp.ReqID > id {
+			result := sm.Commit(newOp)
+			sm.requests[newOp.ClientID] = newOp.ReqID
+			sm.cache[newOp.ClientID] = result
+			if newOp.ClientID == op.ClientID && newOp.ReqID == op.ReqID {
+				finalResults = result
+			}
+		} else {
+			finalResults = sm.cache[newOp.ClientID]
+		}
+		sm.latestSeq = i
+		sm.px.Done(i)
+	}
+	return finalResults
 }
 
 // please don't change this function.
