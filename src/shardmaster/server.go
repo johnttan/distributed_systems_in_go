@@ -135,6 +135,11 @@ func StartServer(servers []string, me int) *ShardMaster {
 	sm.configs = make([]Config, 1)
 	sm.configs[0].Groups = map[int64][]string{}
 
+	sm.requests = make(map[int64]int64)
+	sm.cache = make(map[int64]string)
+	sm.data = make(map[string]string)
+	sm.latestSeq = -1
+
 	rpcs := rpc.NewServer()
 	rpcs.Register(sm)
 
