@@ -20,21 +20,16 @@ type ShardMaster struct {
 	unreliable bool // for testing
 	px         *paxos.Paxos
 
-	configs  []Config // indexed by config num
-	cache    map[int64]string
-	requests map[int64]int64
-	data     map[string]string
+	configs []Config // indexed by config num
+	data    map[string]string
 
 	//latest seq applied to data.
 	latestSeq int
 }
 
 type Op struct {
-	Key      string
-	Value    string
-	Op       string
-	ReqID    int64
-	ClientID int64
+	Op string
+	ID int64
 }
 
 func (sm *ShardMaster) Join(args *JoinArgs, reply *JoinReply) error {
@@ -61,16 +56,24 @@ func (sm *ShardMaster) Query(args *QueryArgs, reply *QueryReply) error {
 	return nil
 }
 
+func nrand() int64 {
+	max := big.NewInt(int64(1) << 62)
+	bigx, _ := rand.Int(rand.Reader, max)
+	x := bigx.Int64()
+	return x
+}
+
 func (sm *ShardMaster) TryUntilAccepted(newOp Op) {
 	// Keep trying new sequence slots until successfully committed to log.
 	seq := sm.px.Max() + 1
+	newOp.ID = nrand()
 	sm.px.Start(seq, newOp)
 	to := 5 * time.Millisecond
 	for {
 		status, untypedOp := sm.px.Status(seq)
 		if status {
 			op := untypedOp.(Op)
-			if op.ReqID == newOp.ReqID && op.ClientID == newOp.ClientID {
+			if op.ID == newOp.ID {
 				return
 			} else {
 				seq += 1
@@ -97,16 +100,8 @@ func (sm *ShardMaster) CommitAll(op Op) string {
 			success, untypedOp = sm.px.Status(i)
 		}
 		newOp := untypedOp.(Op)
-		if id, okreq := sm.requests[newOp.ClientID]; !okreq || newOp.ReqID > id {
-			result := sm.Commit(newOp)
-			sm.requests[newOp.ClientID] = newOp.ReqID
-			sm.cache[newOp.ClientID] = result
-			if newOp.ClientID == op.ClientID && newOp.ReqID == op.ReqID {
-				finalResults = result
-			}
-		} else {
-			finalResults = sm.cache[newOp.ClientID]
-		}
+		result := sm.Commit(newOp)
+		finalResults = result
 		sm.latestSeq = i
 		sm.px.Done(i)
 	}
@@ -135,8 +130,6 @@ func StartServer(servers []string, me int) *ShardMaster {
 	sm.configs = make([]Config, 1)
 	sm.configs[0].Groups = map[int64][]string{}
 
-	sm.requests = make(map[int64]int64)
-	sm.cache = make(map[int64]string)
 	sm.data = make(map[string]string)
 	sm.latestSeq = -1
 
