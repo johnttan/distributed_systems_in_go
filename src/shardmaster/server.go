@@ -21,7 +21,6 @@ type ShardMaster struct {
 	px         *paxos.Paxos
 
 	configs []Config // indexed by config num
-	data    map[string]string
 
 	//latest seq applied to data.
 	latestSeq int
@@ -150,7 +149,6 @@ func StartServer(servers []string, me int) *ShardMaster {
 	sm.configs = make([]Config, 1)
 	sm.configs[0].Groups = map[int64][]string{}
 
-	sm.data = make(map[string]string)
 	sm.latestSeq = -1
 
 	rpcs := rpc.NewServer()
