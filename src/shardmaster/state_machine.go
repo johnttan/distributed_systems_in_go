@@ -24,7 +24,9 @@ func (sm *ShardMaster) Commit(op Op) {
 
 			// Find # of shards per group needed to be balanced
 			shardsPerGroup := NShards / len(newGroups)
-
+			if shardsPerGroup == 0 {
+				shardsPerGroup = 1
+			}
 			keys := []int64{}
 			for key, _ := range newGroups {
 				keys = append(keys, key)
@@ -33,14 +35,12 @@ func (sm *ShardMaster) Commit(op Op) {
 			for newgid, _ := range newGroups {
 				count := countTable[newgid]
 				// Keep track of how many reassigned to new group
-				assignedToNew := 0
 				if count < shardsPerGroup+1 {
 					for shard, gid := range newShards {
-						if (gid != newgid && assignedToNew < shardsPerGroup && countTable[gid] > shardsPerGroup) || gid == 0 {
+						if (gid != newgid && countTable[newgid] < shardsPerGroup && countTable[gid] > shardsPerGroup) || gid == 0 {
 							newShards[shard] = newgid
 							countTable[gid]--
 							countTable[newgid]++
-							assignedToNew++
 						}
 					}
 				}
@@ -80,6 +80,9 @@ func (sm *ShardMaster) Commit(op Op) {
 		delete(countTable, op.GID)
 		// Find # of shards per group needed to be balanced
 		shardsPerGroup := NShards / len(newGroups)
+		if shardsPerGroup == 0 {
+			shardsPerGroup = 1
+		}
 		// Find shards not assigned to new group, and if new group still needs shards, assign current shard to new group
 
 		for shard, gid := range newShards {
@@ -98,6 +101,25 @@ func (sm *ShardMaster) Commit(op Op) {
 			if gid == op.GID {
 				newShards[shard] = groupList[groupIndex]
 				groupIndex = (groupIndex + 1) % len(groupList)
+			}
+		}
+		countTable = make(map[int64]int)
+
+		for shard, gid := range newShards {
+			newShards[shard] = gid
+			countTable[gid]++
+		}
+		for newgid, _ := range newGroups {
+			count := countTable[newgid]
+			// Keep track of how many reassigned to new group
+			if count < shardsPerGroup+1 {
+				for shard, gid := range newShards {
+					if (gid != newgid && countTable[newgid] < shardsPerGroup && countTable[gid] > shardsPerGroup) || gid == 0 {
+						newShards[shard] = newgid
+						countTable[gid]--
+						countTable[newgid]++
+					}
+				}
 			}
 		}
 
