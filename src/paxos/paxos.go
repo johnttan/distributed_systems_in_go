@@ -196,6 +196,18 @@ func (px *Paxos) GetLog() map[int]*Instance {
 	return px.log
 }
 
+func (px *Paxos) GetPeers() []string {
+	return px.peers
+}
+
+func (px *Paxos) GetMe() int {
+	return px.me
+}
+
+func (px *Paxos) GetDone() []int {
+	return px.done
+}
+
 //
 // Min() should return one more than the minimum among z_i,
 // where z_i is the highest number ever passed

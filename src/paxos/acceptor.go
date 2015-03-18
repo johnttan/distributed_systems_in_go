@@ -7,6 +7,7 @@ func (px *Paxos) Decide(args *DecideArgs, reply *DecideReply) error {
 	// fmt.Println("DECIDED", "SEQ", args.inst.Seq, "Num", args.Prop.Num, "Id", args.Prop.Id, args.Done, px.me)
 	px.log[args.Seq].DecidedValue = args.DecideValue
 	px.log[args.Seq].Decided = true
+	reply.Done = px.done[px.me]
 	return nil
 }
 

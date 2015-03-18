@@ -79,15 +79,17 @@ func (px *Paxos) Propose(seq int, value interface{}) {
 
 		decided = true
 
-		for _, peer := range px.peers {
+		for pIndex, peer := range px.peers {
 			args := &DecideArgs{DecideValue: highestAcceptValue, Done: px.done, DecideNum: highestAcceptNum, Seq: seq}
 
+			reply := &DecideReply{}
 			if px.peers[px.me] == peer {
-				reply := &DecideReply{}
 				px.Decide(args, reply)
 			} else {
-				reply := &DecideReply{}
 				call(peer, "Paxos.Decide", args, reply)
+			}
+			if px.done[pIndex] < reply.Done {
+				px.done[pIndex] = reply.Done
 			}
 		}
 		// PR("log, %+v, v", px.log[seq], seq)

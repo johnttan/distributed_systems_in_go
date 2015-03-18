@@ -13,6 +13,7 @@ import "encoding/gob"
 import "math/rand"
 import "time"
 import "fmt"
+import "strings"
 
 const Debug = 1
 
@@ -30,10 +31,10 @@ type ShardMaster struct {
 	dead       bool // for testing
 	unreliable bool // for testing
 	px         *paxos.Paxos
-
-	configs  []Config // indexed by config num
-	previous map[int64]bool
-	requests map[int64]interface{}
+	peers      []string
+	configs    []Config // indexed by config num
+	previous   map[int64]bool
+	requests   map[int64]interface{}
 	//latest seq applied to data.
 	latestSeq int
 }
@@ -135,6 +136,10 @@ func (sm *ShardMaster) CommitAll(op Op) {
 		newOp := untypedOp.(Op)
 		sm.Commit(newOp)
 		sm.latestSeq = i
+
+		if strings.Contains(sm.px.GetPeers()[sm.px.GetMe()], "basic-1") {
+			DPrintf("DONE COMITTING %v, min= %v, dones= %+v", i, sm.px.Min(), sm.px.GetDone())
+		}
 		sm.px.Done(i)
 	}
 }
@@ -157,7 +162,7 @@ func StartServer(servers []string, me int) *ShardMaster {
 
 	sm := new(ShardMaster)
 	sm.me = me
-
+	sm.peers = servers
 	sm.configs = make([]Config, 1)
 	sm.configs[0].Groups = map[int64][]string{}
 	sm.previous = map[int64]bool{}

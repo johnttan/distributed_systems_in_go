@@ -46,7 +46,7 @@ func (sm *ShardMaster) Commit(op Op) {
 				}
 			}
 
-			DPrintf("JOINING, keys= %+v, \n %+v \n op= %+v, counts= %+v, pergroup= %+v", keys, newShards, op, countTable, shardsPerGroup)
+			// DPrintf("JOINING, keys= %+v, \n %+v \n op= %+v, counts= %+v, pergroup= %+v", keys, newShards, op, countTable, shardsPerGroup)
 			// Find shards not assigned to new group, and if new group still needs shards, assign current shard to new group
 
 			newConfig := Config{Num: len(sm.configs), Shards: newShards, Groups: newGroups}
@@ -129,7 +129,7 @@ func (sm *ShardMaster) Commit(op Op) {
 		for key, _ := range newConfig.Groups {
 			keys = append(keys, key)
 		}
-		DPrintf("LEAVING, groups= %+v, \n countTable= %+v,\n gid leaving= %v,\n shards= %+v,\n pergroup=%v, groups=%v, shards=%v", keys, countTable, op.GID, newShards, shardsPerGroup, len(newGroups), NShards)
+		// DPrintf("LEAVING, groups= %+v, \n countTable= %+v,\n gid leaving= %v,\n shards= %+v,\n pergroup=%v, groups=%v, shards=%v", keys, countTable, op.GID, newShards, shardsPerGroup, len(newGroups), NShards)
 		delete(sm.previous, op.GID)
 	case "Move":
 		oldConfig := sm.configs[len(sm.configs)-1]
