@@ -22,8 +22,8 @@ type ShardMaster struct {
 	unreliable bool // for testing
 	px         *paxos.Paxos
 
-	configs []Config // indexed by config num
-
+	configs  []Config // indexed by config num
+	previous map[int64]bool
 	//latest seq applied to data.
 	latestSeq int
 }
@@ -150,7 +150,7 @@ func StartServer(servers []string, me int) *ShardMaster {
 
 	sm.configs = make([]Config, 1)
 	sm.configs[0].Groups = map[int64][]string{}
-
+	sm.previous = map[int64]bool{}
 	sm.latestSeq = -1
 
 	rpcs := rpc.NewServer()
