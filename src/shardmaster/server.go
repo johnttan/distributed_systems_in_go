@@ -4,13 +4,15 @@ import "net"
 import "fmt"
 import "net/rpc"
 import "log"
-
+import crand "crypto/rand"
+import "math/big"
 import "paxos"
 import "sync"
 import "os"
 import "syscall"
 import "encoding/gob"
 import "math/rand"
+import "time"
 
 type ShardMaster struct {
 	mu         sync.Mutex
@@ -37,47 +39,47 @@ type Op struct {
 
 func (sm *ShardMaster) Join(args *JoinArgs, reply *JoinReply) error {
 	// Your code here.
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
 	newOp := Op{Op: "Join", GID: args.GID, Servers: args.Servers}
-	kv.TryUntilAccepted(newOp)
-	kv.CommitAll(newOp)
+	sm.TryUntilAccepted(newOp)
+	sm.CommitAll(newOp)
 	return nil
 }
 
 func (sm *ShardMaster) Leave(args *LeaveArgs, reply *LeaveReply) error {
 	// Your code here.
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
 	newOp := Op{Op: "Leave", GID: args.GID}
-	kv.TryUntilAccepted(newOp)
-	kv.CommitAll(newOp)
+	sm.TryUntilAccepted(newOp)
+	sm.CommitAll(newOp)
 	return nil
 }
 
 func (sm *ShardMaster) Move(args *MoveArgs, reply *MoveReply) error {
 	// Your code here.
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
 	newOp := Op{Op: "Move", Shard: args.Shard, GID: args.GID}
-	kv.TryUntilAccepted(newOp)
-	kv.CommitAll(newOp)
+	sm.TryUntilAccepted(newOp)
+	sm.CommitAll(newOp)
 	return nil
 }
 
 func (sm *ShardMaster) Query(args *QueryArgs, reply *QueryReply) error {
 	// Your code here.
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
 	newOp := Op{Op: "Query", Num: args.Num}
-	kv.TryUntilAccepted(newOp)
-	kv.CommitAll(newOp)
+	sm.TryUntilAccepted(newOp)
+	sm.CommitAll(newOp)
 	return nil
 }
 
 func nrand() int64 {
 	max := big.NewInt(int64(1) << 62)
-	bigx, _ := rand.Int(rand.Reader, max)
+	bigx, _ := crand.Int(crand.Reader, max)
 	x := bigx.Int64()
 	return x
 }
