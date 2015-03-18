@@ -1,7 +1,6 @@
 package shardmaster
 
 import "net"
-import "fmt"
 import "net/rpc"
 import "log"
 import crand "crypto/rand"
@@ -13,6 +12,16 @@ import "syscall"
 import "encoding/gob"
 import "math/rand"
 import "time"
+import "fmt"
+
+const Debug = 1
+
+func DPrintf(format string, a ...interface{}) (n int, err error) {
+	if Debug > 0 {
+		fmt.Printf(format+"\n", a...)
+	}
+	return
+}
 
 type ShardMaster struct {
 	mu         sync.Mutex
@@ -24,6 +33,7 @@ type ShardMaster struct {
 
 	configs  []Config // indexed by config num
 	previous map[int64]bool
+	requests map[int64]interface{}
 	//latest seq applied to data.
 	latestSeq int
 }
@@ -42,7 +52,7 @@ func (sm *ShardMaster) Join(args *JoinArgs, reply *JoinReply) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	newOp := Op{Op: "Join", GID: args.GID, Servers: args.Servers}
-	sm.TryUntilAccepted(newOp)
+	sm.TryUntilAccepted(&newOp)
 	sm.CommitAll(newOp)
 	return nil
 }
@@ -52,7 +62,7 @@ func (sm *ShardMaster) Leave(args *LeaveArgs, reply *LeaveReply) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	newOp := Op{Op: "Leave", GID: args.GID}
-	sm.TryUntilAccepted(newOp)
+	sm.TryUntilAccepted(&newOp)
 	sm.CommitAll(newOp)
 	return nil
 }
@@ -62,7 +72,7 @@ func (sm *ShardMaster) Move(args *MoveArgs, reply *MoveReply) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	newOp := Op{Op: "Move", Shard: args.Shard, GID: args.GID}
-	sm.TryUntilAccepted(newOp)
+	sm.TryUntilAccepted(&newOp)
 	sm.CommitAll(newOp)
 	return nil
 }
@@ -72,8 +82,9 @@ func (sm *ShardMaster) Query(args *QueryArgs, reply *QueryReply) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	newOp := Op{Op: "Query", Num: args.Num}
-	sm.TryUntilAccepted(newOp)
+	sm.TryUntilAccepted(&newOp)
 	sm.CommitAll(newOp)
+	reply.Config = sm.requests[newOp.ID].(Config)
 	return nil
 }
 
@@ -84,11 +95,12 @@ func nrand() int64 {
 	return x
 }
 
-func (sm *ShardMaster) TryUntilAccepted(newOp Op) {
+func (sm *ShardMaster) TryUntilAccepted(newOp *Op) {
 	// Keep trying new sequence slots until successfully committed to log.
 	seq := sm.px.Max() + 1
 	newOp.ID = nrand()
-	sm.px.Start(seq, newOp)
+	deOp := *newOp
+	sm.px.Start(seq, deOp)
 	to := 5 * time.Millisecond
 	for {
 		status, untypedOp := sm.px.Status(seq)
@@ -99,7 +111,7 @@ func (sm *ShardMaster) TryUntilAccepted(newOp Op) {
 			} else {
 				seq += 1
 				// seq = sm.px.Max() + 1
-				sm.px.Start(seq, newOp)
+				sm.px.Start(seq, deOp)
 			}
 		}
 		time.Sleep(to)
@@ -109,24 +121,22 @@ func (sm *ShardMaster) TryUntilAccepted(newOp Op) {
 	}
 }
 
-func (sm *ShardMaster) CommitAll(op Op) string {
-	var finalResults string
+func (sm *ShardMaster) CommitAll(op Op) {
 	for i := sm.latestSeq + 1; i <= sm.px.Max(); i++ {
 		success, untypedOp := sm.px.Status(i)
 		noOp := Op{}
 		sm.px.Start(i, noOp)
+
 		// Retry noOps until log is filled at current position
 		for !success {
 			time.Sleep(20 * time.Millisecond)
 			success, untypedOp = sm.px.Status(i)
 		}
 		newOp := untypedOp.(Op)
-		result := sm.Commit(newOp)
-		finalResults = result
+		sm.Commit(newOp)
 		sm.latestSeq = i
 		sm.px.Done(i)
 	}
-	return finalResults
 }
 
 // please don't change this function.
@@ -152,7 +162,7 @@ func StartServer(servers []string, me int) *ShardMaster {
 	sm.configs[0].Groups = map[int64][]string{}
 	sm.previous = map[int64]bool{}
 	sm.latestSeq = -1
-
+	sm.requests = make(map[int64]interface{})
 	rpcs := rpc.NewServer()
 	rpcs.Register(sm)
 
