@@ -4,6 +4,7 @@ func (px *Paxos) Decide(args *DecideArgs, reply *DecideReply) error {
 	px.mu.Lock()
 	defer px.mu.Unlock()
 	px.newInstance(args.Seq, "Decide")
+	// Communicate dones bidirectionally to propagate done data quickly
 	px.done[args.DoneMe] = args.Done
 	// fmt.Println("DECIDED", "SEQ", args.inst.Seq, "Num", args.Prop.Num, "Id", args.Prop.Id, args.Done, px.me)
 	px.log[args.Seq].DecidedValue = args.DecideValue
