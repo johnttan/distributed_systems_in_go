@@ -28,31 +28,51 @@ type ShardMaster struct {
 }
 
 type Op struct {
-	Op string
-	ID int64
+	Op      string
+	ID      int64
+	GID     int64
+	Servers []string
+	Shard   int
+	Num     int
 }
 
 func (sm *ShardMaster) Join(args *JoinArgs, reply *JoinReply) error {
 	// Your code here.
-
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	newOp := Op{Op: "Join", GID: args.GID, Servers: args.Servers}
+	kv.TryUntilAccepted(newOp)
+	kv.CommitAll(newOp)
 	return nil
 }
 
 func (sm *ShardMaster) Leave(args *LeaveArgs, reply *LeaveReply) error {
 	// Your code here.
-
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	newOp := Op{Op: "Leave", GID: args.GID}
+	kv.TryUntilAccepted(newOp)
+	kv.CommitAll(newOp)
 	return nil
 }
 
 func (sm *ShardMaster) Move(args *MoveArgs, reply *MoveReply) error {
 	// Your code here.
-
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	newOp := Op{Op: "Move", Shard: args.Shard, GID: args.GID}
+	kv.TryUntilAccepted(newOp)
+	kv.CommitAll(newOp)
 	return nil
 }
 
 func (sm *ShardMaster) Query(args *QueryArgs, reply *QueryReply) error {
 	// Your code here.
-
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	newOp := Op{Op: "Query", Num: args.Num}
+	kv.TryUntilAccepted(newOp)
+	kv.CommitAll(newOp)
 	return nil
 }
 
