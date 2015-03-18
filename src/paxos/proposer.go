@@ -80,7 +80,7 @@ func (px *Paxos) Propose(seq int, value interface{}) {
 		decided = true
 
 		for pIndex, peer := range px.peers {
-			args := &DecideArgs{DecideValue: highestAcceptValue, Done: px.done, DecideNum: highestAcceptNum, Seq: seq}
+			args := &DecideArgs{DecideValue: highestAcceptValue, DoneMe: px.me, Done: px.done[px.me], DecideNum: highestAcceptNum, Seq: seq}
 
 			reply := &DecideReply{}
 			if px.peers[px.me] == peer {

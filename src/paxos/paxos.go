@@ -77,7 +77,8 @@ type DecideReply struct {
 }
 
 type DecideArgs struct {
-	Done        []int
+	Done        int
+	DoneMe      int
 	DecideValue interface{}
 	DecideNum   int
 	Seq         int
