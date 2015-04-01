@@ -13,7 +13,6 @@ import "encoding/gob"
 import "math/rand"
 import "time"
 import "fmt"
-import "strings"
 
 const Debug = 1
 
@@ -137,9 +136,6 @@ func (sm *ShardMaster) CommitAll(op Op) {
 		sm.Commit(newOp)
 		sm.latestSeq = i
 
-		if strings.Contains(sm.px.GetPeers()[sm.px.GetMe()], "basic-1") {
-			DPrintf("DONE COMITTING %v, min= %v, dones= %+v", i, sm.px.Min(), sm.px.GetDone())
-		}
 		sm.px.Done(i)
 	}
 }
