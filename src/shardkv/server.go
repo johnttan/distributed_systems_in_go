@@ -53,7 +53,7 @@ type ShardKV struct {
 	latestSeq int
 }
 
-func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
+func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 	id, okreq := kv.requests[args.ClientID]
@@ -66,7 +66,7 @@ func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 	return nil
 }
 
-func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
+func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 	id, okreq := kv.requests[args.ClientID]
@@ -79,7 +79,7 @@ func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	return nil
 }
 
-func (kv *KVPaxos) TryUntilAccepted(newOp Op) {
+func (kv *ShardKV) TryUntilAccepted(newOp Op) {
 	// Keep trying new sequence slots until successfully committed to log.
 	seq := kv.px.Max() + 1
 	kv.px.Start(seq, newOp)
@@ -103,7 +103,7 @@ func (kv *KVPaxos) TryUntilAccepted(newOp Op) {
 	}
 }
 
-func (kv *KVPaxos) CommitAll(op Op) string {
+func (kv *ShardKV) CommitAll(op Op) string {
 	var finalResults string
 	for i := kv.latestSeq + 1; i <= kv.px.Max(); i++ {
 		success, untypedOp := kv.px.Status(i)
