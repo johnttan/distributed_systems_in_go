@@ -13,7 +13,8 @@ type Clerk struct {
 	sm     *shardmaster.Clerk
 	config shardmaster.Config
 	// You'll have to modify Clerk.
-	id int64
+	id    int64
+	reqID int64
 }
 
 func nrand() int64 {
@@ -88,7 +89,7 @@ func (ck *Clerk) Get(key string) string {
 	defer ck.mu.Unlock()
 
 	// You'll have to modify Get().
-
+	ck.reqID++
 	for {
 		shard := key2shard(key)
 
@@ -102,6 +103,7 @@ func (ck *Clerk) Get(key string) string {
 				args := &GetArgs{}
 				args.Key = key
 				args.ClientID = ck.id
+				args.ReqID = ck.reqID
 				var reply GetReply
 				ok := call(srv, "ShardKV.Get", args, &reply)
 				if ok && (reply.Err == OK || reply.Err == ErrNoKey) {
@@ -127,7 +129,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	defer ck.mu.Unlock()
 
 	// You'll have to modify Put().
-
+	ck.reqID++
 	for {
 		shard := key2shard(key)
 
@@ -143,6 +145,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 				args.Value = value
 				args.Op = op
 				args.ClientID = ck.id
+				args.ReqID = ck.reqID
 				var reply PutAppendReply
 				ok := call(srv, "ShardKV.PutAppend", args, &reply)
 				if ok && reply.Err == OK {

@@ -13,7 +13,7 @@ import "encoding/gob"
 import "math/rand"
 import "shardmaster"
 
-const Debug = 1
+const Debug = 0
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
@@ -83,6 +83,7 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 
 func (kv *ShardKV) TryUntilAccepted(newOp Op) {
 	// Keep trying new sequence slots until successfully committed to log.
+	DPrintf("TRYING FOR %+v", newOp)
 	seq := kv.px.Max() + 1
 	kv.px.Start(seq, newOp)
 	to := 5 * time.Millisecond
@@ -106,6 +107,7 @@ func (kv *ShardKV) TryUntilAccepted(newOp Op) {
 }
 
 func (kv *ShardKV) CommitAll(op Op) string {
+	DPrintf("STARTED COMMITALL FOR %+v", op)
 	var finalResults string
 	for i := kv.latestSeq + 1; i <= kv.px.Max(); i++ {
 		success, untypedOp := kv.px.Status(i)
@@ -118,6 +120,7 @@ func (kv *ShardKV) CommitAll(op Op) string {
 		}
 		newOp := untypedOp.(Op)
 		if id, okreq := kv.requests[newOp.ClientID]; !okreq || newOp.ReqID > id {
+			DPrintf("COMMITTING %+v", newOp)
 			result := kv.Commit(newOp)
 			kv.requests[newOp.ClientID] = newOp.ReqID
 			kv.cache[newOp.ClientID] = result
