@@ -13,7 +13,6 @@ import "encoding/gob"
 import "math/rand"
 import "shardmaster"
 
-
 const Debug = 0
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
@@ -23,11 +22,16 @@ func DPrintf(format string, a ...interface{}) (n int, err error) {
 	return
 }
 
-
 type Op struct {
 	// Your definitions here.
+	// Field names must start with capital letters,
+	// otherwise RPC will break.
+	Key      string
+	Value    string
+	Op       string
+	ReqID    int64
+	ClientID int64
 }
-
 
 type ShardKV struct {
 	mu         sync.Mutex
@@ -41,18 +45,90 @@ type ShardKV struct {
 	gid int64 // my replica group ID
 
 	// Your definitions here.
+	cache    map[int64]string
+	requests map[int64]int64
+	data     map[string]string
+
+	//latest seq applied to data.
+	latestSeq int
 }
 
-
-func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) error {
-	// Your code here.
+func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	id, okreq := kv.requests[args.ClientID]
+	if !okreq || args.ReqID > id {
+		newOp := Op{args.Key, "", "Get", args.ReqID, args.ClientID}
+		kv.TryUntilAccepted(newOp)
+		kv.CommitAll(newOp)
+	}
+	reply.Value = kv.cache[args.ClientID]
 	return nil
 }
 
-// RPC handler for client Put and Append requests
-func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
-	// Your code here.
+func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	id, okreq := kv.requests[args.ClientID]
+	if !okreq || args.ReqID > id {
+		newOp := Op{args.Key, args.Value, args.Op, args.ReqID, args.ClientID}
+		kv.TryUntilAccepted(newOp)
+		kv.CommitAll(newOp)
+	}
+	reply.PreviousValue = kv.cache[args.ClientID]
 	return nil
+}
+
+func (kv *KVPaxos) TryUntilAccepted(newOp Op) {
+	// Keep trying new sequence slots until successfully committed to log.
+	seq := kv.px.Max() + 1
+	kv.px.Start(seq, newOp)
+	to := 5 * time.Millisecond
+	for {
+		status, untypedOp := kv.px.Status(seq)
+		if status {
+			op := untypedOp.(Op)
+			if op.ReqID == newOp.ReqID && op.ClientID == newOp.ClientID {
+				return
+			} else {
+				seq += 1
+				// seq = kv.px.Max() + 1
+				kv.px.Start(seq, newOp)
+			}
+		}
+		time.Sleep(to)
+		if to < 100*time.Millisecond {
+			to *= 2
+		}
+	}
+}
+
+func (kv *KVPaxos) CommitAll(op Op) string {
+	var finalResults string
+	for i := kv.latestSeq + 1; i <= kv.px.Max(); i++ {
+		success, untypedOp := kv.px.Status(i)
+		noOp := Op{}
+		kv.px.Start(i, noOp)
+		// Retry noOps until log is filled at current position
+		for !success {
+			time.Sleep(20 * time.Millisecond)
+			success, untypedOp = kv.px.Status(i)
+		}
+		newOp := untypedOp.(Op)
+		if id, okreq := kv.requests[newOp.ClientID]; !okreq || newOp.ReqID > id {
+			result := kv.Commit(newOp)
+			kv.requests[newOp.ClientID] = newOp.ReqID
+			kv.cache[newOp.ClientID] = result
+			if newOp.ClientID == op.ClientID && newOp.ReqID == op.ReqID {
+				finalResults = result
+			}
+		} else {
+			finalResults = kv.cache[newOp.ClientID]
+		}
+		kv.latestSeq = i
+		kv.px.Done(i)
+	}
+	return finalResults
 }
 
 //
@@ -89,12 +165,15 @@ func StartServer(gid int64, shardmasters []string,
 
 	// Your initialization code here.
 	// Don't call Join().
+	kv.requests = make(map[int64]int64)
+	kv.cache = make(map[int64]string)
+	kv.data = make(map[string]string)
+	kv.latestSeq = -1
 
 	rpcs := rpc.NewServer()
 	rpcs.Register(kv)
 
 	kv.px = paxos.Make(servers, me, rpcs)
-
 
 	os.Remove(servers[me])
 	l, e := net.Listen("unix", servers[me])
