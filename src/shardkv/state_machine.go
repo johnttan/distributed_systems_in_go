@@ -16,7 +16,8 @@ func (kv *ShardKV) Commit(op Op) string {
 	case "Get":
 		return kv.data[op.Key]
 	case "Config":
-		DPrintf("CONFIG IN STATE MACHINE  %+v", op)
+		DPrintf("CONFIG IN STATE MACHINE  %+v", op.Config)
+		kv.config = op.Config
 	}
 	return ""
 }

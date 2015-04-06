@@ -72,7 +72,6 @@ func (tc *tCluster) clerk() *Clerk {
 }
 
 func (tc *tCluster) join(gi int) {
-	DPrintf("before join call")
 	tc.mck.Join(tc.groups[gi].gid, tc.groups[gi].ports)
 }
 

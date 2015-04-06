@@ -13,11 +13,12 @@ import "encoding/gob"
 import "math/rand"
 import "shardmaster"
 
-const Debug = 1
+const Debug = 0
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
 		log.Printf(format, a...)
+		log.Println()
 	}
 	return
 }
@@ -86,7 +87,7 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 
 func (kv *ShardKV) TryUntilAccepted(newOp Op) {
 	// Keep trying new sequence slots until successfully committed to log.
-	DPrintf("TRYING FOR %+v", newOp)
+	// DPrintf("TRYING FOR %+v", newOp)
 	seq := kv.px.Max() + 1
 	kv.px.Start(seq, newOp)
 	to := 5 * time.Millisecond
@@ -94,7 +95,7 @@ func (kv *ShardKV) TryUntilAccepted(newOp Op) {
 		status, untypedOp := kv.px.Status(seq)
 		if status {
 			op := untypedOp.(Op)
-			if op.ReqID == newOp.ReqID && op.ClientID == newOp.ClientID {
+			if (op.ReqID == newOp.ReqID && op.ClientID == newOp.ClientID) || (newOp.Config.Num > 0 && newOp.Config.Num == op.Config.Num) {
 				return
 			} else {
 				seq += 1
@@ -110,7 +111,6 @@ func (kv *ShardKV) TryUntilAccepted(newOp Op) {
 }
 
 func (kv *ShardKV) CommitAll(op Op) string {
-	DPrintf("STARTED COMMITALL FOR %+v", op)
 	var finalResults string
 	for i := kv.latestSeq + 1; i <= kv.px.Max(); i++ {
 		success, untypedOp := kv.px.Status(i)
@@ -122,8 +122,7 @@ func (kv *ShardKV) CommitAll(op Op) string {
 			success, untypedOp = kv.px.Status(i)
 		}
 		newOp := untypedOp.(Op)
-		if id, okreq := kv.requests[newOp.ClientID]; !okreq || newOp.ReqID > id {
-			DPrintf("COMMITTING %+v", newOp)
+		if id, okreq := kv.requests[newOp.ClientID]; !okreq || newOp.ReqID > id || newOp.Op == "Config" {
 			result := kv.Commit(newOp)
 			kv.requests[newOp.ClientID] = newOp.ReqID
 			kv.cache[newOp.ClientID] = result
@@ -151,6 +150,11 @@ func (kv *ShardKV) tick() {
 	configNum := kv.config.Num
 	if latestConfig.Num > configNum {
 		kv.CommitAll(Op{})
+	}
+	latestConfig = kv.sm.Query(-1)
+	configNum = kv.config.Num
+	if latestConfig.Num > configNum {
+
 		for configNum < latestConfig.Num {
 			nextConfig := kv.sm.Query(configNum + 1)
 			configOp := Op{Op: "Config", Config: Config(nextConfig)}
