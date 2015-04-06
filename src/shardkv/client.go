@@ -104,6 +104,7 @@ func (ck *Clerk) Get(key string) string {
 				args.Key = key
 				args.ClientID = ck.id
 				args.ReqID = ck.reqID
+				args.ConfigID = ck.config.Num
 				var reply GetReply
 				ok := call(srv, "ShardKV.Get", args, &reply)
 				if ok && (reply.Err == OK || reply.Err == ErrNoKey) {
@@ -129,8 +130,8 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	defer ck.mu.Unlock()
 
 	// You'll have to modify Put().
-	ck.reqID++
 	for {
+		ck.reqID++
 		shard := key2shard(key)
 
 		gid := ck.config.Shards[shard]
@@ -141,6 +142,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 			// try each server in the shard's replication group.
 			for _, srv := range servers {
 				args := &PutAppendArgs{}
+				args.ConfigID = ck.config.Num
 				args.Key = key
 				args.Value = value
 				args.Op = op

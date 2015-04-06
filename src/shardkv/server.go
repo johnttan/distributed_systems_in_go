@@ -33,6 +33,7 @@ type Op struct {
 	ReqID    int64
 	ClientID int64
 	Config   Config
+	ConfigID int //For Get/Puts
 }
 
 type ShardKV struct {
@@ -62,7 +63,7 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) error {
 	defer kv.mu.Unlock()
 	id, okreq := kv.requests[args.ClientID]
 	if !okreq || args.ReqID > id {
-		newOp := Op{args.Key, "", "Get", args.ReqID, args.ClientID, Config{}}
+		newOp := Op{args.Key, "", "Get", args.ReqID, args.ClientID, Config{}, args.ConfigID}
 		kv.TryUntilAccepted(newOp)
 		kv.CommitAll(newOp)
 	}
@@ -76,7 +77,7 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	defer kv.mu.Unlock()
 	id, okreq := kv.requests[args.ClientID]
 	if !okreq || args.ReqID > id {
-		newOp := Op{args.Key, args.Value, args.Op, args.ReqID, args.ClientID, Config{}}
+		newOp := Op{args.Key, args.Value, args.Op, args.ReqID, args.ClientID, Config{}, args.ConfigID}
 		kv.TryUntilAccepted(newOp)
 		kv.CommitAll(newOp)
 	}
@@ -154,7 +155,6 @@ func (kv *ShardKV) tick() {
 	latestConfig = kv.sm.Query(-1)
 	configNum = kv.config.Num
 	if latestConfig.Num > configNum {
-
 		for configNum < latestConfig.Num {
 			nextConfig := kv.sm.Query(configNum + 1)
 			configOp := Op{Op: "Config", Config: Config(nextConfig)}
