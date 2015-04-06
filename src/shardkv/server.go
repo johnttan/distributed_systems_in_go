@@ -13,7 +13,7 @@ import "encoding/gob"
 import "math/rand"
 import "shardmaster"
 
-const Debug = 0
+const Debug = 1
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
@@ -61,7 +61,7 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) error {
 	defer kv.mu.Unlock()
 	id, okreq := kv.requests[args.ClientID]
 	if !okreq || args.ReqID > id {
-		newOp := Op{args.Key, "", "Get", args.ReqID, args.ClientID}
+		newOp := Op{args.Key, "", "Get", args.ReqID, args.ClientID, Config{}}
 		kv.TryUntilAccepted(newOp)
 		kv.CommitAll(newOp)
 	}
@@ -75,7 +75,7 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	defer kv.mu.Unlock()
 	id, okreq := kv.requests[args.ClientID]
 	if !okreq || args.ReqID > id {
-		newOp := Op{args.Key, args.Value, args.Op, args.ReqID, args.ClientID}
+		newOp := Op{args.Key, args.Value, args.Op, args.ReqID, args.ClientID, Config{}}
 		kv.TryUntilAccepted(newOp)
 		kv.CommitAll(newOp)
 	}
@@ -148,12 +148,12 @@ func (kv *ShardKV) tick() {
 	defer kv.mu.Unlock()
 
 	latestConfig := kv.sm.Query(-1)
-	configNum = kv.config.Num
+	configNum := kv.config.Num
 	if latestConfig.Num > configNum {
 		kv.CommitAll(Op{})
-		while(configNum < latestConfig.Num){
+		for configNum < latestConfig.Num {
 			nextConfig := kv.sm.Query(configNum + 1)
-			configOp := Op{Op: "Config", Config: nextConfig}
+			configOp := Op{Op: "Config", Config: Config(nextConfig)}
 			kv.TryUntilAccepted(configOp)
 			configNum++
 		}
@@ -193,7 +193,6 @@ func StartServer(gid int64, shardmasters []string,
 	kv.cache = make(map[int64]string)
 	kv.data = make(map[string]string)
 	kv.latestSeq = -1
-	kv.latestConfig = -1
 
 	rpcs := rpc.NewServer()
 	rpcs.Register(kv)
