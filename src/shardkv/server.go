@@ -31,6 +31,7 @@ type Op struct {
 	Op       string
 	ReqID    int64
 	ClientID int64
+	Config   Config
 }
 
 type ShardKV struct {
@@ -52,8 +53,7 @@ type ShardKV struct {
 	config Config
 
 	//latest seq applied to data.
-	latestSeq    int
-	latestConfig int
+	latestSeq int
 }
 
 func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) error {
@@ -144,6 +144,22 @@ func (kv *ShardKV) CommitAll(op Op) string {
 // if so, re-configure.
 //
 func (kv *ShardKV) tick() {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+
+	latestConfig := kv.sm.Query(-1)
+	configNum = kv.config.Num
+	if latestConfig.Num > configNum {
+		kv.CommitAll(Op{})
+		while(configNum < latestConfig.Num){
+			nextConfig := kv.sm.Query(configNum + 1)
+			configOp := Op{Op: "Config", Config: nextConfig}
+			kv.TryUntilAccepted(configOp)
+			configNum++
+		}
+		kv.CommitAll(Op{})
+	}
+
 }
 
 // tell the server to shut itself down.
@@ -177,6 +193,7 @@ func StartServer(gid int64, shardmasters []string,
 	kv.cache = make(map[int64]string)
 	kv.data = make(map[string]string)
 	kv.latestSeq = -1
+	kv.latestConfig = -1
 
 	rpcs := rpc.NewServer()
 	rpcs.Register(kv)
