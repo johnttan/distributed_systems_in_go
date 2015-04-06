@@ -40,3 +40,11 @@ type GetReply struct {
 	Err   Err
 	Value string
 }
+
+const NShards = 10
+
+type Config struct {
+	Num    int                // config number
+	Shards [NShards]int64     // gid
+	Groups map[int64][]string // gid -> servers[]
+}

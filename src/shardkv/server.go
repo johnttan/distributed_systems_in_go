@@ -49,8 +49,11 @@ type ShardKV struct {
 	requests map[int64]int64
 	data     map[string]string
 
+	config Config
+
 	//latest seq applied to data.
-	latestSeq int
+	latestSeq    int
+	latestConfig int
 }
 
 func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) error {
