@@ -72,6 +72,7 @@ func (tc *tCluster) clerk() *Clerk {
 }
 
 func (tc *tCluster) join(gi int) {
+	DPrintf("before join call")
 	tc.mck.Join(tc.groups[gi].gid, tc.groups[gi].ports)
 }
 
@@ -127,7 +128,6 @@ func TestBasic(t *testing.T) {
 	tc.join(0)
 
 	ck := tc.clerk()
-
 	ck.Put("a", "x")
 	v := ck.Append("a", "b")
 	if v != "x" {

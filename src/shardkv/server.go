@@ -13,7 +13,7 @@ import "encoding/gob"
 import "math/rand"
 import "shardmaster"
 
-const Debug = 0
+const Debug = 1
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
@@ -63,6 +63,7 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) error {
 		kv.CommitAll(newOp)
 	}
 	reply.Value = kv.cache[args.ClientID]
+	reply.Err = OK
 	return nil
 }
 
@@ -76,6 +77,7 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 		kv.CommitAll(newOp)
 	}
 	reply.PreviousValue = kv.cache[args.ClientID]
+	reply.Err = OK
 	return nil
 }
 
