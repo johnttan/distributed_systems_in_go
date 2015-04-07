@@ -19,6 +19,20 @@ const (
 
 type Err string
 
+type Op struct {
+	// Your definitions here.
+	// Field names must start with capital letters,
+	// otherwise RPC will break.
+	Key            string
+	Value          string
+	Op             string
+	ReqID          int64
+	ClientID       int64
+	ConfigNum      int
+	UID            int64
+	MigrationReply *RequestKVReply
+}
+
 type PutAppendArgs struct {
 	Key      string
 	Value    string

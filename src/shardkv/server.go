@@ -27,19 +27,6 @@ func DPrintf(me int, format string, a ...interface{}) (n int, err error) {
 	return
 }
 
-type Op struct {
-	// Your definitions here.
-	// Field names must start with capital letters,
-	// otherwise RPC will break.
-	Key       string
-	Value     string
-	Op        string
-	ReqID     int64
-	ClientID  int64
-	ConfigNum int
-	UID       int64
-}
-
 type ShardKV struct {
 	mu         sync.Mutex
 	l          net.Listener
@@ -247,6 +234,15 @@ func (kv *ShardKV) reconfigure(config *shardmaster.Config) bool {
 		}
 	}
 
+	newOp := Op{
+		Op:             "Config",
+		ConfigNum:      config.Num,
+		MigrationReply: &RequestKVReply{Cache: newCache, Requests: newRequests, Data: newData},
+	}
+
+	kv.tryOp(newOp)
+
+	return true
 }
 
 //
