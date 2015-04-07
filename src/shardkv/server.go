@@ -152,7 +152,7 @@ func (kv *ShardKV) CommitAll(op Op) (string, error) {
 				result := kv.Commit(newOp)
 				kv.cache[newOp.ClientID] = result
 				if newOp.ClientID == op.ClientID && newOp.ReqID == op.ReqID {
-					// fmt.Printf("me= %v, found result for %+v, result is %v , current Data is %+v \n", kv.me, op, result, kv.data)
+					// log.Printf("me= %v, found result for %+v, result is %v , current Data is %+v \n", kv.me, op, result, kv.data)
 					finalResults = result
 					err = nil
 					kv.errorCache[newOp.ClientID] = err
@@ -160,6 +160,7 @@ func (kv *ShardKV) CommitAll(op Op) (string, error) {
 			} else if newOp.ClientID == op.ClientID && newOp.ReqID == op.ReqID {
 				err = errors.New("wrong group")
 				kv.errorCache[newOp.ClientID] = err
+				// log.Printf("wrong group, %+v, %v \n", op, kv.config.Num)
 			}
 		} else {
 			finalResults = kv.cache[newOp.ClientID]
@@ -182,24 +183,22 @@ func (kv *ShardKV) CommitAll(op Op) (string, error) {
 func (kv *ShardKV) tick() {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
+	// log.Printf("me=%v, begin of tick : %+v \n", kv.me, kv.data)
 
 	latestConfig := kv.sm.Query(-1)
 	configNum := kv.config.Num
-	if latestConfig.Num > configNum {
-		kv.CommitAll(Op{})
-	}
-	latestConfig = kv.sm.Query(-1)
-	configNum = kv.config.Num
+
 	if latestConfig.Num > configNum {
 		for configNum < latestConfig.Num {
 			nextConfig := kv.sm.Query(configNum + 1)
 			configOp := Op{Op: "Config", Config: Config(nextConfig)}
 			kv.TryUntilAccepted(configOp)
-			DPrintf(kv.me, "ACCEPTED THIS CONFIG -> %+v", nextConfig)
+			// DPrintf(kv.me, "ACCEPTED THIS CONFIG -> %+v", nextConfig)
 			configNum++
 		}
 		kv.CommitAll(Op{})
 	}
+	// log.Printf("me=%v, end of tick : %+v \n", kv.me, kv.data)
 
 }
 

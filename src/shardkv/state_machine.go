@@ -1,11 +1,14 @@
 package shardkv
 
+// import "log"
+
 // This commit method is core of state machine.
 // This is the only method that mutates core state.
 func (kv *ShardKV) Commit(op Op) string {
 	switch op.Op {
 	case "Put":
 		DPrintf(kv.me, "Applying PUT, currentState: STATE: %+v, OP: %+v", kv.data, op)
+		// log.Printf("me=%v Applying PUT, currentState: STATE: %+v, OP: %+v \n", kv.data, op)
 		kv.data[op.Key] = op.Value
 		return ""
 	case "Append":
