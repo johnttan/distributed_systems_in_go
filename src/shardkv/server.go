@@ -74,7 +74,7 @@ func (kv *ShardKV) validateOp(op Op) (string, Err) {
 		// 	return "", ErrWrongGroup
 		// }
 
-		if op.ReqID < kv.requests[op.ClientID] {
+		if op.ReqID <= kv.requests[op.ClientID] {
 			return kv.cache[op.ClientID], OK
 		}
 	}
