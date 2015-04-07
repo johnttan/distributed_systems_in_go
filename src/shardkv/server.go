@@ -37,6 +37,7 @@ type Op struct {
 	ReqID    int64
 	ClientID int64
 	Config   shardmaster.Config
+	UID int64
 }
 
 type ShardKV struct {
@@ -80,6 +81,30 @@ func (kv *ShardKV) validateOp(op Op) (string, Err) {
 	return "", ""
 }
 
+func (kv *ShardKV) logOp (newOp Op) {
+	// Keep trying new sequence slots until successfully committed to log.
+	seq := kv.latestSeq + 1
+	kv.px.Start(seq, newOp)
+	to := 100 * time.Millisecond
+	for {
+		status, untypedOp := kv.px.Status(seq)
+		if status {
+			op := untypedOp.(Op)
+			_, err := kv.validateOp(op)
+			if err == "" {
+				kv.commit(op)
+			}
+			if op.UID == newOp.UID {
+				return
+			} else {
+				seq += 1
+				kv.px.Start(seq, newOp)
+			}
+		}
+		time.Sleep(to)
+	}
+}
+
 func (kv *ShardKV) tryOp(op Op) (string, Err) {
 	// Check if operation has been cached or is invalid because of wrong group
 	value, err := kv.validateOp(op)
@@ -87,7 +112,9 @@ func (kv *ShardKV) tryOp(op Op) (string, Err) {
 		return value, err
 	}
 
-
+	isInLog := false
+	op.UID = nrand()
+	kv.logOp(op)
 }
 
 func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) error {
