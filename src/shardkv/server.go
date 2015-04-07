@@ -12,13 +12,14 @@ import "encoding/gob"
 import "math/rand"
 import "shardmaster"
 
-// import "errors"
+import "errors"
 
 const Debug = 0
 
 func DPrintf(me int, format string, a ...interface{}) (n int, err error) {
+	errOne := errors.New("err")
 	if Debug > 0 {
-		log.Println()
+		log.Println("", errOne)
 		log.Printf("Inside server -> %v", me)
 		log.Println()
 		log.Printf(format, a...)
@@ -145,9 +146,9 @@ func (kv *ShardKV) CommitAll(op Op) (string, error) {
 		}
 		newOp := untypedOp.(Op)
 		if id, okreq := kv.requests[newOp.ClientID]; (!okreq || newOp.ReqID > id) && newOp.Op != "Config" {
+			kv.requests[newOp.ClientID] = newOp.ReqID
 			// if newOp.ConfigID == kv.config.Num {
 			result := kv.Commit(newOp)
-			kv.requests[newOp.ClientID] = newOp.ReqID
 			kv.cache[newOp.ClientID] = result
 			if newOp.ClientID == op.ClientID && newOp.ReqID == op.ReqID {
 				// fmt.Printf("me= %v, found result for %+v, result is %v , current Data is %+v \n", kv.me, op, result, kv.data)
@@ -160,9 +161,9 @@ func (kv *ShardKV) CommitAll(op Op) (string, error) {
 		} else {
 			finalResults = kv.cache[newOp.ClientID]
 		}
-		// if newOp.Op == "Config" {
-		// 	kv.Commit(newOp)
-		// }
+		if newOp.Op == "Config" {
+			kv.Commit(newOp)
+		}
 		kv.latestSeq = i
 		kv.px.Done(i)
 	}
