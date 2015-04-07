@@ -23,7 +23,7 @@ type PutAppendArgs struct {
 	Op       string // "Put" or "Append"
 	ReqID    int64
 	ClientID int64
-	ConfigID int
+	Config   shardmaster.Config
 }
 
 type PutAppendReply struct {
@@ -35,7 +35,7 @@ type GetArgs struct {
 	Key      string
 	ReqID    int64
 	ClientID int64
-	ConfigID int
+	Config   shardmaster.Config
 }
 
 type GetReply struct {
@@ -49,4 +49,7 @@ type Config struct {
 	Num    int                // config number
 	Shards [NShards]int64     // gid
 	Groups map[int64][]string // gid -> servers[]
+}
+
+type RequestKVArgs struct {
 }

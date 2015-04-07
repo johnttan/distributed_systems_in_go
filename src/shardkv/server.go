@@ -36,8 +36,7 @@ type Op struct {
 	Op       string
 	ReqID    int64
 	ClientID int64
-	Config   Config
-	ConfigID int //For Get/Puts
+	Config   shardmaster.Config
 }
 
 type ShardKV struct {
@@ -52,12 +51,11 @@ type ShardKV struct {
 	gid int64 // my replica group ID
 
 	// Your definitions here.
-	cache      map[int64]string
-	requests   map[int64]int64
-	data       map[string]string
-	errorCache map[int64]error
+	cache    map[int64]string
+	requests map[int64]int64
+	data     map[string]string
 
-	config Config
+	config shardmaster.Config
 
 	//latest seq applied to data.
 	latestSeq int
@@ -66,114 +64,23 @@ type ShardKV struct {
 func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	id, okreq := kv.requests[args.ClientID]
-	var failErr error
-	if !okreq || args.ReqID > id {
-		newOp := Op{args.Key, "", "Get", args.ReqID, args.ClientID, Config{}, args.ConfigID}
-		kv.TryUntilAccepted(newOp)
-		_, err := kv.CommitAll(newOp)
-		failErr = err
-	}
-	reply.Value = kv.cache[args.ClientID]
-	if failErr != nil {
-		// fmt.Printf("FAIL WRONG GROUP argsConfig=%v , realConfig=%v", args.ConfigID, kv.config.Num)
-		// fmt.Println()
-		reply.Err = ErrWrongGroup
-	} else {
-		reply.Err = OK
-	}
+
 	return nil
 }
 
 func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	id, okreq := kv.requests[args.ClientID]
-	var failErr error
-	if !okreq || args.ReqID > id {
-		newOp := Op{args.Key, args.Value, args.Op, args.ReqID, args.ClientID, Config{}, args.ConfigID}
-		kv.TryUntilAccepted(newOp)
-		_, err := kv.CommitAll(newOp)
-		failErr = err
-	}
-	if failErr != nil {
-		// fmt.Printf("FAIL WRONG GROUP argsConfig=%v , realConfig=%v", args.ConfigID, kv.config.Num)
-		// fmt.Println()
-		reply.Err = ErrWrongGroup
-	} else {
-		reply.Err = OK
-	}
-	reply.PreviousValue = kv.cache[args.ClientID]
+
 	return nil
 }
 
 func (kv *ShardKV) TryUntilAccepted(newOp Op) {
-	// Keep trying new sequence slots until successfully committed to log.
-	// DPrintf("TRYING FOR %+v", newOp)
-	seq := kv.px.Max() + 1
-	kv.px.Start(seq, newOp)
-	to := 5 * time.Millisecond
-	for {
-		status, untypedOp := kv.px.Status(seq)
-		if status {
-			op := untypedOp.(Op)
-			if (op.ReqID == newOp.ReqID && op.ClientID == newOp.ClientID) || (newOp.Config.Num > 0 && newOp.Config.Num == op.Config.Num) {
-				return
-			} else {
-				seq += 1
-				// seq = kv.px.Max() + 1
-				kv.px.Start(seq, newOp)
-			}
-		}
-		time.Sleep(to)
-		if to < 100*time.Millisecond {
-			to *= 2
-		}
-	}
+
 }
 
 func (kv *ShardKV) CommitAll(op Op) (string, error) {
-	var finalResults string
-	var err error
 
-	for i := kv.latestSeq + 1; i <= kv.px.Max(); i++ {
-		success, untypedOp := kv.px.Status(i)
-		noOp := Op{}
-		kv.px.Start(i, noOp)
-		// Retry noOps until log is filled at current position
-		for !success {
-			time.Sleep(20 * time.Millisecond)
-			success, untypedOp = kv.px.Status(i)
-		}
-		newOp := untypedOp.(Op)
-		if id, okreq := kv.requests[newOp.ClientID]; (!okreq || newOp.ReqID > id) && newOp.Op != "Config" {
-			kv.requests[newOp.ClientID] = newOp.ReqID
-			if newOp.ConfigID == kv.config.Num {
-				result := kv.Commit(newOp)
-				kv.cache[newOp.ClientID] = result
-				if newOp.ClientID == op.ClientID && newOp.ReqID == op.ReqID {
-					// log.Printf("me= %v, found result for %+v, result is %v , current Data is %+v \n", kv.me, op, result, kv.data)
-					finalResults = result
-					err = nil
-					kv.errorCache[newOp.ClientID] = err
-				}
-			} else if newOp.ClientID == op.ClientID && newOp.ReqID == op.ReqID {
-				err = errors.New("wrong group")
-				kv.errorCache[newOp.ClientID] = err
-				// log.Printf("wrong group, %+v, %v \n", op, kv.config.Num)
-			}
-		} else {
-			finalResults = kv.cache[newOp.ClientID]
-			err = kv.errorCache[newOp.ClientID]
-		}
-		if newOp.Op == "Config" {
-			kv.Commit(newOp)
-		}
-		kv.latestSeq = i
-		kv.px.Done(i)
-	}
-	// fmt.Printf("me=%v, done with commits for %+v, returning = %v \n", kv.me, op, finalResults)
-	return finalResults, err
 }
 
 //
@@ -183,22 +90,6 @@ func (kv *ShardKV) CommitAll(op Op) (string, error) {
 func (kv *ShardKV) tick() {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	// log.Printf("me=%v, begin of tick : %+v \n", kv.me, kv.data)
-
-	latestConfig := kv.sm.Query(-1)
-	configNum := kv.config.Num
-
-	if latestConfig.Num > configNum {
-		for configNum < latestConfig.Num {
-			nextConfig := kv.sm.Query(configNum + 1)
-			configOp := Op{Op: "Config", Config: Config(nextConfig)}
-			kv.TryUntilAccepted(configOp)
-			// DPrintf(kv.me, "ACCEPTED THIS CONFIG -> %+v", nextConfig)
-			configNum++
-		}
-		kv.CommitAll(Op{})
-	}
-	// log.Printf("me=%v, end of tick : %+v \n", kv.me, kv.data)
 
 }
 
@@ -232,7 +123,6 @@ func StartServer(gid int64, shardmasters []string,
 	kv.requests = make(map[int64]int64)
 	kv.cache = make(map[int64]string)
 	kv.data = make(map[string]string)
-	kv.errorCache = make(map[int64]error)
 	kv.latestSeq = -1
 
 	rpcs := rpc.NewServer()
