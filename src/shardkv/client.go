@@ -89,8 +89,8 @@ func (ck *Clerk) Get(key string) string {
 	defer ck.mu.Unlock()
 
 	// You'll have to modify Get().
-	ck.reqID++
 	for {
+		ck.reqID++
 		shard := key2shard(key)
 
 		gid := ck.config.Shards[shard]

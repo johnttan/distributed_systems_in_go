@@ -1,7 +1,6 @@
 package shardkv
 
 import "net"
-import "fmt"
 import "net/rpc"
 import "log"
 import "time"
@@ -12,14 +11,17 @@ import "syscall"
 import "encoding/gob"
 import "math/rand"
 import "shardmaster"
-import "errors"
+
+// import "errors"
 
 const Debug = 0
 
-func DPrintf(format string, a ...interface{}) (n int, err error) {
+func DPrintf(me int, format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
-		log.Printf(format, a...)
 		log.Println()
+		log.Printf("Inside server -> %v", me)
+		log.Println()
+		log.Printf(format, a...)
 	}
 	return
 }
@@ -72,6 +74,8 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) error {
 	}
 	reply.Value = kv.cache[args.ClientID]
 	if failErr != nil {
+		// fmt.Printf("FAIL WRONG GROUP argsConfig=%v , realConfig=%v", args.ConfigID, kv.config.Num)
+		// fmt.Println()
 		reply.Err = ErrWrongGroup
 	} else {
 		reply.Err = OK
@@ -91,6 +95,8 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 		failErr = err
 	}
 	if failErr != nil {
+		// fmt.Printf("FAIL WRONG GROUP argsConfig=%v , realConfig=%v", args.ConfigID, kv.config.Num)
+		// fmt.Println()
 		reply.Err = ErrWrongGroup
 	} else {
 		reply.Err = OK
@@ -138,24 +144,29 @@ func (kv *ShardKV) CommitAll(op Op) (string, error) {
 			success, untypedOp = kv.px.Status(i)
 		}
 		newOp := untypedOp.(Op)
-		if id, okreq := kv.requests[newOp.ClientID]; !okreq || newOp.ReqID > id || newOp.Op == "Config" {
-			if newOp.ConfigID == kv.config.Num {
-				result := kv.Commit(newOp)
-				kv.requests[newOp.ClientID] = newOp.ReqID
-				kv.cache[newOp.ClientID] = result
-				if newOp.ClientID == op.ClientID && newOp.ReqID == op.ReqID {
-					finalResults = result
-					err = nil
-				}
-			} else if newOp.ClientID == op.ClientID && newOp.ReqID == op.ReqID {
-				err = errors.New("wrong group")
+		if id, okreq := kv.requests[newOp.ClientID]; (!okreq || newOp.ReqID > id) && newOp.Op != "Config" {
+			// if newOp.ConfigID == kv.config.Num {
+			result := kv.Commit(newOp)
+			kv.requests[newOp.ClientID] = newOp.ReqID
+			kv.cache[newOp.ClientID] = result
+			if newOp.ClientID == op.ClientID && newOp.ReqID == op.ReqID {
+				// fmt.Printf("me= %v, found result for %+v, result is %v , current Data is %+v \n", kv.me, op, result, kv.data)
+				finalResults = result
+				err = nil
 			}
+			// } else if newOp.ClientID == op.ClientID && newOp.ReqID == op.ReqID {
+			// err = errors.New("wrong group")
+			// }
 		} else {
 			finalResults = kv.cache[newOp.ClientID]
 		}
+		// if newOp.Op == "Config" {
+		// 	kv.Commit(newOp)
+		// }
 		kv.latestSeq = i
 		kv.px.Done(i)
 	}
+	// fmt.Printf("me=%v, done with commits for %+v, returning = %v \n", kv.me, op, finalResults)
 	return finalResults, err
 }
 
@@ -179,6 +190,7 @@ func (kv *ShardKV) tick() {
 			nextConfig := kv.sm.Query(configNum + 1)
 			configOp := Op{Op: "Config", Config: Config(nextConfig)}
 			kv.TryUntilAccepted(configOp)
+			DPrintf(kv.me, "ACCEPTED THIS CONFIG -> %+v", nextConfig)
 			configNum++
 		}
 		kv.CommitAll(Op{})
@@ -246,7 +258,7 @@ func StartServer(gid int64, shardmasters []string,
 					f, _ := c1.File()
 					err := syscall.Shutdown(int(f.Fd()), syscall.SHUT_WR)
 					if err != nil {
-						fmt.Printf("shutdown: %v\n", err)
+						// fmt.Printf("shutdown: %v\n", err)
 					}
 					go rpcs.ServeConn(conn)
 				} else {
@@ -256,7 +268,7 @@ func StartServer(gid int64, shardmasters []string,
 				conn.Close()
 			}
 			if err != nil && kv.dead == false {
-				fmt.Printf("ShardKV(%v) accept: %v\n", me, err.Error())
+				// fmt.Printf("ShardKV(%v) accept: %v\n", me, err.Error())
 				kv.kill()
 			}
 		}
