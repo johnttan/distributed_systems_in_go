@@ -63,13 +63,19 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 	id, okreq := kv.requests[args.ClientID]
+	var failErr error
 	if !okreq || args.ReqID > id {
 		newOp := Op{args.Key, "", "Get", args.ReqID, args.ClientID, Config{}, args.ConfigID}
 		kv.TryUntilAccepted(newOp)
-		kv.CommitAll(newOp)
+		_, err := kv.CommitAll(newOp)
+		failErr = err
 	}
 	reply.Value = kv.cache[args.ClientID]
-	reply.Err = OK
+	if failErr != nil {
+		reply.Err = ErrWrongGroup
+	} else {
+		reply.Err = OK
+	}
 	return nil
 }
 
@@ -77,13 +83,19 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 	id, okreq := kv.requests[args.ClientID]
+	var failErr error
 	if !okreq || args.ReqID > id {
 		newOp := Op{args.Key, args.Value, args.Op, args.ReqID, args.ClientID, Config{}, args.ConfigID}
 		kv.TryUntilAccepted(newOp)
-		kv.CommitAll(newOp)
+		_, err := kv.CommitAll(newOp)
+		failErr = err
+	}
+	if failErr != nil {
+		reply.Err = ErrWrongGroup
+	} else {
+		reply.Err = OK
 	}
 	reply.PreviousValue = kv.cache[args.ClientID]
-	reply.Err = OK
 	return nil
 }
 
