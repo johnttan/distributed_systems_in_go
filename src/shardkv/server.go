@@ -12,6 +12,7 @@ import "syscall"
 import "encoding/gob"
 import "math/rand"
 import "shardmaster"
+import "errors"
 
 const Debug = 0
 
@@ -111,8 +112,10 @@ func (kv *ShardKV) TryUntilAccepted(newOp Op) {
 	}
 }
 
-func (kv *ShardKV) CommitAll(op Op) string {
+func (kv *ShardKV) CommitAll(op Op) (string, error) {
 	var finalResults string
+	var err error
+
 	for i := kv.latestSeq + 1; i <= kv.px.Max(); i++ {
 		success, untypedOp := kv.px.Status(i)
 		noOp := Op{}
@@ -124,11 +127,16 @@ func (kv *ShardKV) CommitAll(op Op) string {
 		}
 		newOp := untypedOp.(Op)
 		if id, okreq := kv.requests[newOp.ClientID]; !okreq || newOp.ReqID > id || newOp.Op == "Config" {
-			result := kv.Commit(newOp)
-			kv.requests[newOp.ClientID] = newOp.ReqID
-			kv.cache[newOp.ClientID] = result
-			if newOp.ClientID == op.ClientID && newOp.ReqID == op.ReqID {
-				finalResults = result
+			if newOp.ConfigID == kv.config.Num {
+				result := kv.Commit(newOp)
+				kv.requests[newOp.ClientID] = newOp.ReqID
+				kv.cache[newOp.ClientID] = result
+				if newOp.ClientID == op.ClientID && newOp.ReqID == op.ReqID {
+					finalResults = result
+					err = nil
+				}
+			} else if newOp.ClientID == op.ClientID && newOp.ReqID == op.ReqID {
+				err = errors.New("wrong group")
 			}
 		} else {
 			finalResults = kv.cache[newOp.ClientID]
@@ -136,7 +144,7 @@ func (kv *ShardKV) CommitAll(op Op) string {
 		kv.latestSeq = i
 		kv.px.Done(i)
 	}
-	return finalResults
+	return finalResults, err
 }
 
 //
