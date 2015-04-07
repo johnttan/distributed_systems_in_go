@@ -69,10 +69,10 @@ func (kv *ShardKV) validateOp(op Op) (string, Err) {
 			return "", OK
 		}
 	case "Get", "Put", "Append":
-		// shard := key2shard(op.Key)
-		// if kv.gid != kv.config.Shards[shard] {
-		// 	return "", ErrWrongGroup
-		// }
+		shard := key2shard(op.Key)
+		if kv.gid != kv.config.Shards[shard] {
+			return "", ErrWrongGroup
+		}
 
 		if op.ReqID <= kv.requests[op.ClientID] {
 			return kv.cache[op.ClientID], OK
@@ -188,6 +188,17 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	return nil
 }
 
+func (kv *ShardKV) reconfigure(config *shardmaster.Config) bool {
+	currentConfig := kv.config
+
+	for shard := 0; shard < len(config.Shards); shard++ {
+		// If new shard
+		if config.Shards[shard] == kv.gid && currentConfig.Shards[shard] != kv.gid {
+
+		}
+	}
+}
+
 //
 // Ask the shardmaster if there's a new configuration;
 // if so, re-configure.
@@ -195,7 +206,16 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 func (kv *ShardKV) tick() {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-
+	newConfig := kv.sm.Query(-1)
+	if newConfig.Num > kv.config.Num {
+		for i := kv.config.Num + 1; i < newConfig.Num; i++ {
+			currentNewConfig := kv.sm.Query(i)
+			success := kv.reconfigure(&currentNewConfig)
+			if !success {
+				return
+			}
+		}
+	}
 }
 
 // tell the server to shut itself down.
