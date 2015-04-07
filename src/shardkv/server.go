@@ -98,7 +98,7 @@ func (kv *ShardKV) commit (op Op) {
 	kv.cache[op.ClientID] = value
 }
 
-func (kv *ShardKV) logOp (newOp Op) {
+func (kv *ShardKV) logOp (newOp Op) (string, Err) {
 	// Keep trying new sequence slots until successfully committed to log.
 	seq := kv.latestSeq + 1
 	kv.px.Start(seq, newOp)
@@ -107,12 +107,25 @@ func (kv *ShardKV) logOp (newOp Op) {
 		status, untypedOp := kv.px.Status(seq)
 		if status {
 			op := untypedOp.(Op)
+			// Check if operation has been cached or is invalid because of wrong group
 			_, err := kv.validateOp(op)
+			// This validation is to see if op has been invalidated by previous ops
+			value, oldE := kv.validateOp(newOp)
+
+			// If op we are trying to commit is not valid, return value,err
+			if oldE != "" {
+				return value, err
+			}
+
+			// If the current op from log is valid, then commit it
 			if err == "" {
 				kv.commit(op)
+				kv.px.Done(seq)
+				kv.latestSeq = seq
 			}
 			if op.UID == newOp.UID {
-				return
+				// Return the cached version, and OK
+				return kv.cache[op.ClientID], OK
 			} else {
 				seq += 1
 				kv.px.Start(seq, newOp)
@@ -123,15 +136,9 @@ func (kv *ShardKV) logOp (newOp Op) {
 }
 
 func (kv *ShardKV) tryOp(op Op) (string, Err) {
-	// Check if operation has been cached or is invalid because of wrong group
-	value, err := kv.validateOp(op)
-	if err != "" {
-		return value, err
-	}
-
-	isInLog := false
 	op.UID = nrand()
-	kv.logOp(op)
+	value, err := kv.logOp(op)
+	return value, err
 }
 
 func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) error {
