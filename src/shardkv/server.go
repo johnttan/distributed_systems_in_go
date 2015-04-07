@@ -61,6 +61,35 @@ type ShardKV struct {
 	latestSeq int
 }
 
+func (kv *ShardKV) validateOp(op Op) (string, Err) {
+	switch op.Op {
+		case "Config":
+			if op.Config.Num >= kv.config.Num {
+				return "", OK
+			}
+		case "Get", "Put", "Append":
+			shard := key2shard(op.Key)
+			if kv.gid != kv.config.Shards[shard] {
+				return "", ErrWrongGroup
+			}
+
+			if op.ReqID < kv.requests[op.ClientID] {
+				return kv.cache[op.ClientID], OK
+			}
+	}
+	return "", ""
+}
+
+func (kv *ShardKV) tryOp(op Op) (string, Err) {
+	// Check if operation has been cached or is invalid because of wrong group
+	value, err := kv.validateOp(op)
+	if err != "" {
+		return value, err
+	}
+
+
+}
+
 func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()

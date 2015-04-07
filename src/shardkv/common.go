@@ -47,11 +47,5 @@ type GetReply struct {
 
 const NShards = 10
 
-type Config struct {
-	Num    int                // config number
-	Shards [NShards]int64     // gid
-	Groups map[int64][]string // gid -> servers[]
-}
-
 type RequestKVArgs struct {
 }
