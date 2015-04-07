@@ -191,10 +191,30 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 func (kv *ShardKV) reconfigure(config *shardmaster.Config) bool {
 	currentConfig := kv.config
 
+	newRequests = make(map[int64]int64)
+	newCache = make(map[int64]string)
+	newData = make(map[string]string)
+
+	// Find all shards/caches and merge them into latest maps
 	for shard := 0; shard < len(config.Shards); shard++ {
 		// If new shard
 		if config.Shards[shard] == kv.gid && currentConfig.Shards[shard] != kv.gid {
+			servers := currentConfig.Groups[config.Shards[shard]]
+			for _, srv := range servers {
+				args := &RequestKVArgs{}
+				args.Shard = shard
+				args.ConfigNum = currentConfig.Num
 
+				reply = &RequestKVReply{}
+
+				ok := call(srv, "ShardKV.GetShard", args, reply)
+				if !ok {
+					return false
+				}
+				if ok && (reply.Err == ErrWrongGroup) {
+					return false
+				}
+			}
 		}
 	}
 }
