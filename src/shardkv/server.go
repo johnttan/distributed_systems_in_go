@@ -52,9 +52,10 @@ type ShardKV struct {
 	gid int64 // my replica group ID
 
 	// Your definitions here.
-	cache    map[int64]string
-	requests map[int64]int64
-	data     map[string]string
+	cache      map[int64]string
+	requests   map[int64]int64
+	data       map[string]string
+	errorCache map[int64]error
 
 	config Config
 
@@ -147,19 +148,22 @@ func (kv *ShardKV) CommitAll(op Op) (string, error) {
 		newOp := untypedOp.(Op)
 		if id, okreq := kv.requests[newOp.ClientID]; (!okreq || newOp.ReqID > id) && newOp.Op != "Config" {
 			kv.requests[newOp.ClientID] = newOp.ReqID
-			// if newOp.ConfigID == kv.config.Num {
-			result := kv.Commit(newOp)
-			kv.cache[newOp.ClientID] = result
-			if newOp.ClientID == op.ClientID && newOp.ReqID == op.ReqID {
-				// fmt.Printf("me= %v, found result for %+v, result is %v , current Data is %+v \n", kv.me, op, result, kv.data)
-				finalResults = result
-				err = nil
+			if newOp.ConfigID == kv.config.Num {
+				result := kv.Commit(newOp)
+				kv.cache[newOp.ClientID] = result
+				if newOp.ClientID == op.ClientID && newOp.ReqID == op.ReqID {
+					// fmt.Printf("me= %v, found result for %+v, result is %v , current Data is %+v \n", kv.me, op, result, kv.data)
+					finalResults = result
+					err = nil
+					kv.errorCache[newOp.ClientID] = err
+				}
+			} else if newOp.ClientID == op.ClientID && newOp.ReqID == op.ReqID {
+				err = errors.New("wrong group")
+				kv.errorCache[newOp.ClientID] = err
 			}
-			// } else if newOp.ClientID == op.ClientID && newOp.ReqID == op.ReqID {
-			// err = errors.New("wrong group")
-			// }
 		} else {
 			finalResults = kv.cache[newOp.ClientID]
+			err = kv.errorCache[newOp.ClientID]
 		}
 		if newOp.Op == "Config" {
 			kv.Commit(newOp)
@@ -229,6 +233,7 @@ func StartServer(gid int64, shardmasters []string,
 	kv.requests = make(map[int64]int64)
 	kv.cache = make(map[int64]string)
 	kv.data = make(map[string]string)
+	kv.errorCache = make(map[int64]error)
 	kv.latestSeq = -1
 
 	rpcs := rpc.NewServer()
