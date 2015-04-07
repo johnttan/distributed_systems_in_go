@@ -53,7 +53,7 @@ type RequestKVArgs struct {
 }
 
 type RequestKVReply {
-	cache    map[int64]string
-	requests map[int64]int64
-	data     map[string]string
+	Cache    map[int64]string
+	Requests map[int64]int64
+	Data     map[string]string
 }

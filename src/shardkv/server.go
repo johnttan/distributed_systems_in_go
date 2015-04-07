@@ -188,6 +188,22 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	return nil
 }
 
+func (kv *ShardKV) GetShard(args *RequestKVArgs, reply *RequestKVReply) error {
+	if args.ConfigNum < kv.config.Num {
+		reply.Err = ErrWrongGroup
+		return nil
+	}
+	reply.Requests = kv.requests
+	reply.Cache = kv.Cache
+	reply.Data = make(map[int64]int64)
+	for key, val := range kv.data {
+		if key2shard(key) == args.Shard {
+			reply.Data[key] = val
+		}
+	}
+	return nil
+}
+
 func (kv *ShardKV) reconfigure(config *shardmaster.Config) bool {
 	currentConfig := kv.config
 
