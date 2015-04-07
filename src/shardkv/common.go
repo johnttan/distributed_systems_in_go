@@ -48,4 +48,12 @@ type GetReply struct {
 const NShards = 10
 
 type RequestKVArgs struct {
+	Shard  int
+	ConfigNum int
+}
+
+type RequestKVReply {
+	cache    map[int64]string
+	requests map[int64]int64
+	data     map[string]string
 }

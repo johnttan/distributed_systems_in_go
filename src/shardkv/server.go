@@ -65,7 +65,7 @@ type ShardKV struct {
 func (kv *ShardKV) validateOp(op Op) (string, Err) {
 	switch op.Op {
 	case "Config":
-		if op.Config.Num >= kv.config.Num {
+		if op.ConfigNum >= kv.config.Num {
 			return "", OK
 		}
 	case "Get", "Put", "Append":
