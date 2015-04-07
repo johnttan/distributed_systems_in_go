@@ -81,6 +81,23 @@ func (kv *ShardKV) validateOp(op Op) (string, Err) {
 	return "", ""
 }
 
+func (kv *ShardKV) commit (op Op) {
+	var returnValue string
+	switch op.Op {
+	case "Get":
+		returnValue = kv.data[op.Key]
+	case "Put":
+		kv.data[op.Key] = op.Value
+	case "Append":
+		returnValue = kv.data[op.Key]
+		kv.data[op.Key] = kv.data[op.Key] + op.Value
+	}
+
+	// Cache return values and latest ReqID
+	kv.requests[op.ClientID] = op.ReqID
+	kv.cache[op.ClientID] = value
+}
+
 func (kv *ShardKV) logOp (newOp Op) {
 	// Keep trying new sequence slots until successfully committed to log.
 	seq := kv.latestSeq + 1
