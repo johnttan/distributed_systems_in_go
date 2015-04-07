@@ -31,13 +31,13 @@ type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
-	Key      string
-	Value    string
-	Op       string
-	ReqID    int64
-	ClientID int64
-	Config   shardmaster.Config
-	UID      int64
+	Key       string
+	Value     string
+	Op        string
+	ReqID     int64
+	ClientID  int64
+	ConfigNum int
+	UID       int64
 }
 
 type ShardKV struct {
@@ -160,7 +160,6 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) error {
 		Key:      args.Key,
 		ReqID:    args.ReqID,
 		ClientID: args.ClientID,
-		Config:   args.Config,
 	}
 
 	value, err := kv.tryOp(getOp)
@@ -178,7 +177,6 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 		Key:      args.Key,
 		ReqID:    args.ReqID,
 		ClientID: args.ClientID,
-		Config:   args.Config,
 		Value:    args.Value,
 	}
 
@@ -194,8 +192,8 @@ func (kv *ShardKV) GetShard(args *RequestKVArgs, reply *RequestKVReply) error {
 		return nil
 	}
 	reply.Requests = kv.requests
-	reply.Cache = kv.Cache
-	reply.Data = make(map[int64]int64)
+	reply.Cache = kv.cache
+	reply.Data = make(map[string]string)
 	for key, val := range kv.data {
 		if key2shard(key) == args.Shard {
 			reply.Data[key] = val
@@ -204,26 +202,26 @@ func (kv *ShardKV) GetShard(args *RequestKVArgs, reply *RequestKVReply) error {
 	return nil
 }
 
-func (kv *ShardKV) merge(newReq map[int64]int64, newCache map[int64]string, newData map[string]string, *RequestKVReply) {
-	for clientID, reqID := range newReq {
-		oldReqID, ok := kv.requests[clientID]
+func (kv *ShardKV) merge(newReq map[int64]int64, newCache map[int64]string, newData map[string]string, reply *RequestKVReply) {
+	for clientID, reqID := range reply.Requests {
+		oldReqID, ok := newReq[clientID]
 		if !ok || oldReqID < reqID {
-			kv.requests[clientID] = reqID
-			kv.cache[clientID] = newCache[clientID]
+			newReq[clientID] = reqID
+			newCache[clientID] = reply.Cache[clientID]
 		}
 	}
 
-	for key, value := range newData {
-		kv.data[key] = value
+	for key, value := range reply.Data {
+		newData[key] = value
 	}
 }
 
 func (kv *ShardKV) reconfigure(config *shardmaster.Config) bool {
 	currentConfig := kv.config
 
-	newRequests = make(map[int64]int64)
-	newCache = make(map[int64]string)
-	newData = make(map[string]string)
+	newRequests := make(map[int64]int64)
+	newCache := make(map[int64]string)
+	newData := make(map[string]string)
 
 	// Find all shards/caches and merge them into latest maps
 	for shard := 0; shard < len(config.Shards); shard++ {
@@ -235,7 +233,7 @@ func (kv *ShardKV) reconfigure(config *shardmaster.Config) bool {
 				args.Shard = shard
 				args.ConfigNum = currentConfig.Num
 
-				reply = &RequestKVReply{}
+				reply := &RequestKVReply{}
 
 				ok := call(srv, "ShardKV.GetShard", args, reply)
 				if !ok {
@@ -248,6 +246,7 @@ func (kv *ShardKV) reconfigure(config *shardmaster.Config) bool {
 			}
 		}
 	}
+
 }
 
 //
