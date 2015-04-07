@@ -64,6 +64,15 @@ type ShardKV struct {
 func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
+	getOp := Op{
+		Op:       "Get",
+		Key:      args.Key,
+		ReqID:    args.ReqID,
+		ClientID: args.ClientID,
+		Config:   args.Config,
+	}
+
+	reply.Value, reply.Err := kv.tryOp(getOp)
 
 	return nil
 }
@@ -73,14 +82,6 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	defer kv.mu.Unlock()
 
 	return nil
-}
-
-func (kv *ShardKV) TryUntilAccepted(newOp Op) {
-
-}
-
-func (kv *ShardKV) CommitAll(op Op) (string, error) {
-
 }
 
 //

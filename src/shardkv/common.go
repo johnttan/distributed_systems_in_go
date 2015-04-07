@@ -1,5 +1,7 @@
 package shardkv
 
+import "shardmaster"
+
 //
 // Sharded key/value server.
 // Lots of replica groups, each running op-at-a-time paxos.
