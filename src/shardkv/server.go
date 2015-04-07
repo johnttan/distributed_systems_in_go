@@ -69,10 +69,10 @@ func (kv *ShardKV) validateOp(op Op) (string, Err) {
 			return "", OK
 		}
 	case "Get", "Put", "Append":
-		shard := key2shard(op.Key)
-		if kv.gid != kv.config.Shards[shard] {
-			return "", ErrWrongGroup
-		}
+		// shard := key2shard(op.Key)
+		// if kv.gid != kv.config.Shards[shard] {
+		// 	return "", ErrWrongGroup
+		// }
 
 		if op.ReqID < kv.requests[op.ClientID] {
 			return kv.cache[op.ClientID], OK
@@ -81,7 +81,7 @@ func (kv *ShardKV) validateOp(op Op) (string, Err) {
 	return "", ""
 }
 
-func (kv *ShardKV) commit(op Op) {
+func (kv *ShardKV) commit(op Op, seq int) {
 	var returnValue string
 	switch op.Op {
 	case "Get":
@@ -96,6 +96,10 @@ func (kv *ShardKV) commit(op Op) {
 	// Cache return values and latest ReqID
 	kv.requests[op.ClientID] = op.ReqID
 	kv.cache[op.ClientID] = returnValue
+
+	// Let paxos know we're done with this op/seq
+	kv.px.Done(seq)
+	kv.latestSeq = seq
 }
 
 func (kv *ShardKV) getLog(seq int) Op {
@@ -128,11 +132,9 @@ func (kv *ShardKV) logOp(newOp Op) (string, Err) {
 
 		// If the current op from log is valid, then commit it
 		if err == "" {
-			kv.commit(op)
+			// log.Printf("COMMITTING THE LOGGED, %+v \n\n", op)
+			kv.commit(op, seq)
 		}
-
-		kv.px.Done(seq)
-		kv.latestSeq = seq
 
 		if op.UID == newOp.UID {
 			// Return the cached version, and OK
@@ -142,7 +144,6 @@ func (kv *ShardKV) logOp(newOp Op) (string, Err) {
 			kv.px.Start(seq, newOp)
 		}
 	}
-
 }
 
 func (kv *ShardKV) tryOp(op Op) (string, Err) {
@@ -172,7 +173,18 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) error {
 func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
+	putAppendOp := Op{
+		Op:       args.Op,
+		Key:      args.Key,
+		ReqID:    args.ReqID,
+		ClientID: args.ClientID,
+		Config:   args.Config,
+		Value:    args.Value,
+	}
 
+	value, err := kv.tryOp(putAppendOp)
+	reply.PreviousValue = value
+	reply.Err = err
 	return nil
 }
 
