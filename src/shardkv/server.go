@@ -204,6 +204,20 @@ func (kv *ShardKV) GetShard(args *RequestKVArgs, reply *RequestKVReply) error {
 	return nil
 }
 
+func (kv *ShardKV) merge(newReq map[int64]int64, newCache map[int64]string, newData map[string]string, *RequestKVReply) {
+	for clientID, reqID := range newReq {
+		oldReqID, ok := kv.requests[clientID]
+		if !ok || oldReqID < reqID {
+			kv.requests[clientID] = reqID
+			kv.cache[clientID] = newCache[clientID]
+		}
+	}
+
+	for key, value := range newData {
+		kv.data[key] = value
+	}
+}
+
 func (kv *ShardKV) reconfigure(config *shardmaster.Config) bool {
 	currentConfig := kv.config
 
@@ -230,6 +244,7 @@ func (kv *ShardKV) reconfigure(config *shardmaster.Config) bool {
 				if ok && (reply.Err == ErrWrongGroup) {
 					return false
 				}
+				kv.merge(newRequests, newCache, newData, reply)
 			}
 		}
 	}
