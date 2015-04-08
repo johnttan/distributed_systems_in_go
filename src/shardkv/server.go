@@ -16,6 +16,7 @@ import "errors"
 
 const Debug = 1
 
+// TODO: Implement more effective handoff strategy such that G1 -> G2 handoff prevents G1 from handling requests after initiation of handoff
 func DPrintf(me int64, format string, a ...interface{}) (n int, err error) {
 	errOne := errors.New("err")
 	if Debug > 0 {
