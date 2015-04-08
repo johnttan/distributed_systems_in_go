@@ -67,7 +67,6 @@ func (kv *ShardKV) validateOp(op Op) (string, Err) {
 			return kv.cache[op.ClientID], OK
 		}
 	}
-	// DPrintf(kv.gid, " VALIDATION op = %+v", op)
 	return "", ""
 }
 
@@ -175,12 +174,12 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	value, err := kv.tryOp(putAppendOp)
 	reply.PreviousValue = value
 	reply.Err = err
-	DPrintf(kv.gid, "PUTAPPEND reply %+v, config=%+v, \n\nargs =%+v", reply, kv.config, args)
+	// DPrintf(kv.gid, "PUTAPPEND reply %+v, config=%+v, \n\nargs =%+v", reply, kv.config, args)
 	return nil
 }
 
 func (kv *ShardKV) GetShard(args *RequestKVArgs, reply *RequestKVReply) error {
-	if args.Config.Num < kv.config.Num {
+	if args.Config.Num > kv.config.Num {
 		reply.Err = ErrWrongGroup
 		return nil
 	}
@@ -192,12 +191,10 @@ func (kv *ShardKV) GetShard(args *RequestKVArgs, reply *RequestKVReply) error {
 			reply.Data[key] = val
 		}
 	}
-	// log.Printf("REQUEST FOR GET SHARD %+v", reply)
 	return nil
 }
 
 func (kv *ShardKV) merge(newReq map[int64]int64, newCache map[int64]string, newData map[string]string, reply *RequestKVReply) {
-	// DPrintf(kv.gid, "mergeStart newData=%+v \n replyData=%+v", newData, reply.Data)
 	for clientID, reqID := range reply.Requests {
 		oldReqID, ok := newReq[clientID]
 		if !ok || oldReqID < reqID {
@@ -209,7 +206,6 @@ func (kv *ShardKV) merge(newReq map[int64]int64, newCache map[int64]string, newD
 	for key, value := range reply.Data {
 		newData[key] = value
 	}
-
 }
 
 func (kv *ShardKV) reconfigure(config *shardmaster.Config) bool {
@@ -223,7 +219,11 @@ func (kv *ShardKV) reconfigure(config *shardmaster.Config) bool {
 		// If new shard
 		// DPrintf(kv.gid, "oldshards = %+v, new shards = %+v", currentConfig, config)
 		if config.Shards[shard] == kv.gid && currentConfig.Shards[shard] != kv.gid {
-			servers := currentConfig.Groups[config.Shards[shard]]
+			servers := currentConfig.Groups[currentConfig.Shards[shard]]
+			foundShard := false
+			if len(servers) == 0 {
+				foundShard = true
+			}
 			for _, srv := range servers {
 				args := &RequestKVArgs{}
 				args.Shard = shard
@@ -232,14 +232,18 @@ func (kv *ShardKV) reconfigure(config *shardmaster.Config) bool {
 				reply := &RequestKVReply{}
 
 				ok := call(srv, "ShardKV.GetShard", args, reply)
-				if !ok {
-					return false
-				}
 				if ok && (reply.Err == ErrWrongGroup) {
 					return false
 				}
+				if ok {
+					kv.merge(newRequests, newCache, newData, reply)
+					foundShard = true
+					break
+				}
 				// DPrintf(kv.gid, "starting reconfigure merge %+v", reply.Data)
-				kv.merge(newRequests, newCache, newData, reply)
+			}
+			if !foundShard {
+				return false
 			}
 		}
 	}
