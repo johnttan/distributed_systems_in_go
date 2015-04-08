@@ -52,12 +52,15 @@ type ShardKV struct {
 func (kv *ShardKV) validateOp(op Op) (string, Err) {
 	switch op.Op {
 	case "Config":
-		if op.ConfigNum >= kv.config.Num {
+		// If config > op.Config, then we've already transitioned.
+		// Return an OK error to bypass commit.
+		if kv.config.Num >= op.Config.Num {
 			return "", OK
 		}
 	case "Get", "Put", "Append":
 		shard := key2shard(op.Key)
 		if kv.gid != kv.config.Shards[shard] {
+			// log.Printf("WRONG GROUP shards = %+v, gid=%v \n\n", kv.config.Shards, kv.gid)
 			return "", ErrWrongGroup
 		}
 
@@ -78,6 +81,9 @@ func (kv *ShardKV) commit(op Op, seq int) {
 	case "Append":
 		returnValue = kv.data[op.Key]
 		kv.data[op.Key] = kv.data[op.Key] + op.Value
+	case "Config":
+		log.Printf("CONFIG COMMITTING %+v", op)
+		kv.config = op.Config
 	}
 
 	// Cache return values and latest ReqID
@@ -174,7 +180,7 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 }
 
 func (kv *ShardKV) GetShard(args *RequestKVArgs, reply *RequestKVReply) error {
-	if args.ConfigNum < kv.config.Num {
+	if args.Config.Num < kv.config.Num {
 		reply.Err = ErrWrongGroup
 		return nil
 	}
@@ -218,7 +224,7 @@ func (kv *ShardKV) reconfigure(config *shardmaster.Config) bool {
 			for _, srv := range servers {
 				args := &RequestKVArgs{}
 				args.Shard = shard
-				args.ConfigNum = currentConfig.Num
+				args.Config = currentConfig
 
 				reply := &RequestKVReply{}
 
@@ -236,10 +242,9 @@ func (kv *ShardKV) reconfigure(config *shardmaster.Config) bool {
 
 	newOp := Op{
 		Op:             "Config",
-		ConfigNum:      config.Num,
 		MigrationReply: &RequestKVReply{Cache: newCache, Requests: newRequests, Data: newData},
+		Config:         *config,
 	}
-
 	kv.tryOp(newOp)
 
 	return true
@@ -254,7 +259,7 @@ func (kv *ShardKV) tick() {
 	defer kv.mu.Unlock()
 	newConfig := kv.sm.Query(-1)
 	if newConfig.Num > kv.config.Num {
-		for i := kv.config.Num + 1; i < newConfig.Num; i++ {
+		for i := kv.config.Num + 1; i <= newConfig.Num; i++ {
 			currentNewConfig := kv.sm.Query(i)
 			success := kv.reconfigure(&currentNewConfig)
 			if !success {

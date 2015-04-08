@@ -28,9 +28,9 @@ type Op struct {
 	Op             string
 	ReqID          int64
 	ClientID       int64
-	ConfigNum      int
 	UID            int64
 	MigrationReply *RequestKVReply
+	Config         shardmaster.Config
 }
 
 type PutAppendArgs struct {
@@ -62,8 +62,8 @@ type GetReply struct {
 const NShards = 10
 
 type RequestKVArgs struct {
-	Shard     int
-	ConfigNum int
+	Shard  int
+	Config shardmaster.Config
 }
 
 type RequestKVReply struct {
