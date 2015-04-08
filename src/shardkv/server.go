@@ -14,9 +14,9 @@ import "shardmaster"
 
 import "errors"
 
-const Debug = 0
+const Debug = 1
 
-func DPrintf(me int, format string, a ...interface{}) (n int, err error) {
+func DPrintf(me int64, format string, a ...interface{}) (n int, err error) {
 	errOne := errors.New("err")
 	if Debug > 0 {
 		log.Println("", errOne)
@@ -60,7 +60,6 @@ func (kv *ShardKV) validateOp(op Op) (string, Err) {
 	case "Get", "Put", "Append":
 		shard := key2shard(op.Key)
 		if kv.gid != kv.config.Shards[shard] {
-			// log.Printf("WRONG GROUP shards = %+v, gid=%v \n\n", kv.config.Shards, kv.gid)
 			return "", ErrWrongGroup
 		}
 
@@ -68,10 +67,11 @@ func (kv *ShardKV) validateOp(op Op) (string, Err) {
 			return kv.cache[op.ClientID], OK
 		}
 	}
+	// DPrintf(kv.gid, " VALIDATION op = %+v", op)
 	return "", ""
 }
 
-func (kv *ShardKV) commit(op Op, seq int) {
+func (kv *ShardKV) commit(op Op) {
 	var returnValue string
 	switch op.Op {
 	case "Get":
@@ -82,17 +82,13 @@ func (kv *ShardKV) commit(op Op, seq int) {
 		returnValue = kv.data[op.Key]
 		kv.data[op.Key] = kv.data[op.Key] + op.Value
 	case "Config":
-		log.Printf("CONFIG COMMITTING %+v", op)
 		kv.config = op.Config
+		kv.merge(kv.requests, kv.cache, kv.data, op.MigrationReply)
 	}
 
 	// Cache return values and latest ReqID
 	kv.requests[op.ClientID] = op.ReqID
 	kv.cache[op.ClientID] = returnValue
-
-	// Let paxos know we're done with this op/seq
-	kv.px.Done(seq)
-	kv.latestSeq = seq
 }
 
 func (kv *ShardKV) getLog(seq int) Op {
@@ -111,22 +107,25 @@ func (kv *ShardKV) logOp(newOp Op) (string, Err) {
 	// Keep trying new sequence slots until successfully committed to log.
 	seq := kv.latestSeq + 1
 	kv.px.Start(seq, newOp)
+
 	for {
 		op := kv.getLog(seq)
+		// Let paxos know we're done with this op/seq
+		kv.px.Done(seq)
+		kv.latestSeq = seq
 		// Check if operation has been cached or is invalid because of wrong group
 		_, err := kv.validateOp(op)
 		// This validation is to see if op has been invalidated by previous ops
-		value, oldE := kv.validateOp(newOp)
 
-		// If op we are trying to commit is not valid, return value,err
+		value, oldE := kv.validateOp(newOp)
+		// If op we are trying to commit is not valid, return value,oldE
 		if oldE != "" {
-			return value, err
+			return value, oldE
 		}
 
 		// If the current op from log is valid, then commit it
 		if err == "" {
-			// log.Printf("COMMITTING THE LOGGED, %+v \n\n", op)
-			kv.commit(op, seq)
+			kv.commit(op)
 		}
 
 		if op.UID == newOp.UID {
@@ -176,6 +175,7 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	value, err := kv.tryOp(putAppendOp)
 	reply.PreviousValue = value
 	reply.Err = err
+	DPrintf(kv.gid, "PUTAPPEND reply %+v, config=%+v, \n\nargs =%+v", reply, kv.config, args)
 	return nil
 }
 
@@ -192,10 +192,12 @@ func (kv *ShardKV) GetShard(args *RequestKVArgs, reply *RequestKVReply) error {
 			reply.Data[key] = val
 		}
 	}
+	// log.Printf("REQUEST FOR GET SHARD %+v", reply)
 	return nil
 }
 
 func (kv *ShardKV) merge(newReq map[int64]int64, newCache map[int64]string, newData map[string]string, reply *RequestKVReply) {
+	// DPrintf(kv.gid, "mergeStart newData=%+v \n replyData=%+v", newData, reply.Data)
 	for clientID, reqID := range reply.Requests {
 		oldReqID, ok := newReq[clientID]
 		if !ok || oldReqID < reqID {
@@ -207,6 +209,7 @@ func (kv *ShardKV) merge(newReq map[int64]int64, newCache map[int64]string, newD
 	for key, value := range reply.Data {
 		newData[key] = value
 	}
+
 }
 
 func (kv *ShardKV) reconfigure(config *shardmaster.Config) bool {
@@ -215,10 +218,10 @@ func (kv *ShardKV) reconfigure(config *shardmaster.Config) bool {
 	newRequests := make(map[int64]int64)
 	newCache := make(map[int64]string)
 	newData := make(map[string]string)
-
 	// Find all shards/caches and merge them into latest maps
 	for shard := 0; shard < len(config.Shards); shard++ {
 		// If new shard
+		// DPrintf(kv.gid, "oldshards = %+v, new shards = %+v", currentConfig, config)
 		if config.Shards[shard] == kv.gid && currentConfig.Shards[shard] != kv.gid {
 			servers := currentConfig.Groups[config.Shards[shard]]
 			for _, srv := range servers {
@@ -235,6 +238,7 @@ func (kv *ShardKV) reconfigure(config *shardmaster.Config) bool {
 				if ok && (reply.Err == ErrWrongGroup) {
 					return false
 				}
+				// DPrintf(kv.gid, "starting reconfigure merge %+v", reply.Data)
 				kv.merge(newRequests, newCache, newData, reply)
 			}
 		}
@@ -246,7 +250,7 @@ func (kv *ShardKV) reconfigure(config *shardmaster.Config) bool {
 		Config:         *config,
 	}
 	kv.tryOp(newOp)
-
+	// log.Printf("RECONFIGURING %+v \n\n", newOp.MigrationReply)
 	return true
 }
 
@@ -300,6 +304,7 @@ func StartServer(gid int64, shardmasters []string,
 	kv.cache = make(map[int64]string)
 	kv.data = make(map[string]string)
 	kv.latestSeq = -1
+	kv.config = shardmaster.Config{Num: -1}
 
 	rpcs := rpc.NewServer()
 	rpcs.Register(kv)

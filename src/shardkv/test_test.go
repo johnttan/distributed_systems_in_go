@@ -130,6 +130,7 @@ func TestBasic(t *testing.T) {
 	ck.Put("a", "x")
 	v := ck.Append("a", "b")
 	if v != "x" {
+		fmt.Printf("val %v\n", v)
 		t.Fatalf("Puthash got wrong value")
 	}
 	if ck.Get("a") != "xb" {
