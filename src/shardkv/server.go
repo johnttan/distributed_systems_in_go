@@ -59,13 +59,13 @@ func (kv *ShardKV) validateOp(op Op) (string, Err) {
 		}
 	case "Get", "Put", "Append":
 		shard := key2shard(op.Key)
+		if op.ReqID <= kv.requests[op.ClientID] {
+			return kv.cache[op.ClientID], OK
+		}
 		if kv.gid != kv.config.Shards[shard] {
 			return "", ErrWrongGroup
 		}
 
-		if op.ReqID <= kv.requests[op.ClientID] {
-			return kv.cache[op.ClientID], OK
-		}
 	}
 	return "", ""
 }
@@ -183,13 +183,17 @@ func (kv *ShardKV) GetShard(args *RequestKVArgs, reply *RequestKVReply) error {
 		reply.Err = ErrWrongGroup
 		return nil
 	}
-	reply.Requests = kv.requests
-	reply.Cache = kv.cache
+	reply.Requests = make(map[int64]int64)
+	reply.Cache = make(map[int64]string)
 	reply.Data = make(map[string]string)
 	for key, val := range kv.data {
 		if key2shard(key) == args.Shard {
 			reply.Data[key] = val
 		}
+	}
+	for client, req := range kv.requests {
+		reply.Requests[client] = req
+		reply.Cache[client] = kv.cache[client]
 	}
 	return nil
 }
@@ -266,13 +270,11 @@ func (kv *ShardKV) tick() {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 	newConfig := kv.sm.Query(-1)
-	if newConfig.Num > kv.config.Num {
-		for i := kv.config.Num + 1; i <= newConfig.Num; i++ {
-			currentNewConfig := kv.sm.Query(i)
-			success := kv.reconfigure(&currentNewConfig)
-			if !success {
-				return
-			}
+	for i := kv.config.Num + 1; i <= newConfig.Num; i++ {
+		currentNewConfig := kv.sm.Query(i)
+		success := kv.reconfigure(&currentNewConfig)
+		if !success {
+			return
 		}
 	}
 }

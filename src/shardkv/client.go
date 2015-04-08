@@ -111,6 +111,7 @@ func (ck *Clerk) Get(key string) string {
 					return reply.Value
 				}
 				if ok && (reply.Err == ErrWrongGroup) {
+					ck.reqID++
 					break
 				}
 			}
