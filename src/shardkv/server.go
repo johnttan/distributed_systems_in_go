@@ -40,23 +40,38 @@ type ShardKV struct {
 	gid int64 // my replica group ID
 
 	// Your definitions here.
-	cache    map[int64]string
-	requests map[int64]int64
-	data     map[string]string
-
-	config shardmaster.Config
-
+	cache           map[int64]string
+	requests        map[int64]int64
+	data            map[string]string
+	shardsOffline   []bool
+	config          shardmaster.Config
+	waitingOnShards []bool
+	reconfiguring   bool
+	newConfig       shardmaster.Config
 	//latest seq applied to data.
 	latestSeq int
 }
 
 func (kv *ShardKV) validateOp(op Op) (string, Err) {
 	switch op.Op {
-	case "Config":
+	case "StartConfig":
 		// If config > op.Config, then we've already transitioned.
 		// Return an OK error to bypass commit.
-		if kv.config.Num >= op.Config.Num {
-			return "", OK
+		if kv.config.Num >= op.Config.Num || kv.reconfiguring {
+			return "", ErrWrongGroup
+		}
+	case "EndConfig":
+		if !kv.reconfiguring {
+			return "", ErrWrongGroup
+		}
+	case "ReceiveShard":
+		// Already received shard
+		if !kv.waitingOnShards[op.Shard] || !kv.reconfiguring {
+			return "", ErrWrongGroup
+		}
+	case "SendShard":
+		if !kv.reconfiguring {
+			return "", ErrWrongGroup
 		}
 	case "Get", "Put", "Append":
 		shard := key2shard(op.Key)
@@ -312,6 +327,8 @@ func StartServer(gid int64, shardmasters []string,
 	kv.data = make(map[string]string)
 	kv.latestSeq = -1
 	kv.config = shardmaster.Config{Num: -1}
+	kv.shardsOffline = make([]bool, NShards)
+	kv.waitingOnShards = make([]bool, NShards)
 
 	rpcs := rpc.NewServer()
 	rpcs.Register(kv)
