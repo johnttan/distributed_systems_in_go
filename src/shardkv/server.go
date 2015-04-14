@@ -75,6 +75,9 @@ func (kv *ShardKV) validateOp(op Op) (string, Err) {
 		}
 	case "Get", "Put", "Append":
 		shard := key2shard(op.Key)
+		if kv.shardsOffline[shard] {
+			return "", ErrWrongGroup
+		}
 		if op.ReqID <= kv.requests[op.ClientID] {
 			return kv.cache[op.ClientID], OK
 		}
@@ -96,9 +99,33 @@ func (kv *ShardKV) commit(op Op) {
 	case "Append":
 		returnValue = kv.data[op.Key]
 		kv.data[op.Key] = kv.data[op.Key] + op.Value
-	case "Config":
-		kv.config = op.Config
+	case "StartConfig":
+		kv.newConfig = op.Config
+		// kv.merge(kv.requests, kv.cache, kv.data, op.MigrationReply)
+		kv.reconfiguring = true
+		for shard := 0; shard < NShards; shard++ {
+			// If new shard, or old shard that is now unavailable, mark it offline
+			if kv.config.Shards[shard] == kv.gid && kv.newConfig.Shards[shard] != kv.gid {
+				kv.shardsOffline[shard] = true
+			}
+			if kv.config.Shards[shard] != kv.gid && kv.newConfig.Shards[shard] == kv.gid {
+				kv.shardsOffline[shard] = true
+			}
+		}
+	case "StopConfig":
+		kv.config = kv.newConfig
+		kv.reconfiguring = false
+		for ind, _ := range kv.shardsOffline {
+			kv.shardsOffline[ind] = false
+		}
+	case "SendShard":
+		args := &RequestKVArgs{Shard: op.Shard}
+		reply := &RequestKVReply{}
+		kv.GetShard(args, reply)
+	case "ReceiveShard":
 		kv.merge(kv.requests, kv.cache, kv.data, op.MigrationReply)
+		kv.shardsOffline[op.Shard] = false
+
 	}
 
 	// Cache return values and latest ReqID
@@ -195,10 +222,6 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 }
 
 func (kv *ShardKV) GetShard(args *RequestKVArgs, reply *RequestKVReply) error {
-	if args.Config.Num > kv.config.Num {
-		reply.Err = ErrWrongGroup
-		return nil
-	}
 	reply.Requests = make(map[int64]int64)
 	reply.Cache = make(map[int64]string)
 	reply.Data = make(map[string]string)

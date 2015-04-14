@@ -31,6 +31,7 @@ type Op struct {
 	UID            int64
 	MigrationReply *RequestKVReply
 	Config         shardmaster.Config
+	Shard          int
 }
 
 type PutAppendArgs struct {
