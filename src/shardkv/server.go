@@ -106,7 +106,6 @@ func (kv *ShardKV) commit(op Op) {
 		kv.data[op.Key] = kv.data[op.Key] + op.Value
 	case "StartConfig":
 		kv.newConfig = op.Config
-		// kv.merge(kv.requests, kv.cache, kv.data, op.MigrationReply)
 		kv.reconfiguring = true
 		for shard := 0; shard < NShards; shard++ {
 			// If new shard, or old shard that is now unavailable, mark it offline
@@ -227,7 +226,8 @@ func StartServer(gid int64, shardmasters []string,
 	kv.config = shardmaster.Config{Num: -1}
 	kv.shardsOffline = make([]bool, NShards)
 	kv.waitingOnShards = make([]bool, NShards)
-
+	kv.shardsToReceive = make(map[int]bool)
+	kv.shardsToSend = make(map[int]bool)
 	rpcs := rpc.NewServer()
 	rpcs.Register(kv)
 

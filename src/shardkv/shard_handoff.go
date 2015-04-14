@@ -3,14 +3,14 @@ package shardkv
 import "shardmaster"
 
 func (kv *ShardKV) ReceiveShard(args *SendShardArgs, reply *SendShardReply) error {
-  newOp := Op{
-    Op:             "ReceiveShard",
-    MigrationReply: args.MigrationReply,
-    Shard: args.MigrationReply.Shard
-  }
-  _, err := kv.tryOp(newOp)
-  reply.Err = err
-  return nil
+	newOp := Op{
+		Op:             "ReceiveShard",
+		MigrationReply: args.MigrationReply,
+		Shard:          args.MigrationReply.Shard,
+	}
+	_, err := kv.tryOp(newOp)
+	reply.Err = err
+	return nil
 }
 
 func (kv *ShardKV) SendShard(gid int64, payload *RequestKVReply) {
@@ -56,24 +56,24 @@ func (kv *ShardKV) merge(newReq map[int64]int64, newCache map[int64]string, newD
 }
 
 func (kv *ShardKV) reconfigure(config *shardmaster.Config) bool {
-  if kv.reconfiguring {
-    done := true
-    for _, sendDone := range kv.shardsToSend {
-      done = done && sendDone
-    }
-    for _, receiveDone := range kv.shardsToReceive {
-      done = done && receiveDone
-    }
-    if !done{
-      return false
-    } else {
-      doneOp := Op{Op: "StopConfig", Config: config}
-      kv.tryOp(doneOp)
-      return true
-    }
-  }else{
-    startOp := Op{Op: "StartConfig", Config: config}
-    kv.tryOp(doneOp)
-    return false
-  }
+	if kv.reconfiguring {
+		done := true
+		for _, sendDone := range kv.shardsToSend {
+			done = done && sendDone
+		}
+		for _, receiveDone := range kv.shardsToReceive {
+			done = done && receiveDone
+		}
+		if !done {
+			return false
+		} else {
+			doneOp := Op{Op: "StopConfig", Config: *config}
+			kv.tryOp(doneOp)
+			return true
+		}
+	} else {
+		startOp := Op{Op: "StartConfig", Config: *config}
+		kv.tryOp(startOp)
+		return false
+	}
 }
