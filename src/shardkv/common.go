@@ -32,6 +32,7 @@ type Op struct {
 	MigrationReply *RequestKVReply
 	Config         shardmaster.Config
 	Shard          int
+	GID            int64
 }
 
 type PutAppendArgs struct {
@@ -71,5 +72,14 @@ type RequestKVReply struct {
 	Cache    map[int64]string
 	Requests map[int64]int64
 	Data     map[string]string
+	Shard    int
 	Err      Err
+}
+
+type SendShardArgs struct {
+	MigrationReply *RequestKVReply
+}
+
+type SendShardReply struct {
+	Err Err
 }

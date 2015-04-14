@@ -46,6 +46,8 @@ type ShardKV struct {
 	shardsOffline   []bool
 	config          shardmaster.Config
 	waitingOnShards []bool
+	shardsToSend    map[int]bool
+	shardsToReceive map[int]bool
 	reconfiguring   bool
 	newConfig       shardmaster.Config
 	//latest seq applied to data.
@@ -106,9 +108,11 @@ func (kv *ShardKV) commit(op Op) {
 		for shard := 0; shard < NShards; shard++ {
 			// If new shard, or old shard that is now unavailable, mark it offline
 			if kv.config.Shards[shard] == kv.gid && kv.newConfig.Shards[shard] != kv.gid {
+				kv.shardsToSend[shard] = true
 				kv.shardsOffline[shard] = true
 			}
 			if kv.config.Shards[shard] != kv.gid && kv.newConfig.Shards[shard] == kv.gid {
+				kv.shardsToReceive[shard] = true
 				kv.shardsOffline[shard] = true
 			}
 		}
@@ -121,69 +125,17 @@ func (kv *ShardKV) commit(op Op) {
 	case "SendShard":
 		args := &RequestKVArgs{Shard: op.Shard}
 		reply := &RequestKVReply{}
-		kv.GetShard(args, reply)
+		kv.getShard(args, reply)
+		reply.Shard = op.Shard
+		kv.SendShard(op.GID, reply)
 	case "ReceiveShard":
 		kv.merge(kv.requests, kv.cache, kv.data, op.MigrationReply)
 		kv.shardsOffline[op.Shard] = false
-
 	}
 
 	// Cache return values and latest ReqID
 	kv.requests[op.ClientID] = op.ReqID
 	kv.cache[op.ClientID] = returnValue
-}
-
-func (kv *ShardKV) getLog(seq int) Op {
-	to := 100 * time.Millisecond
-	for {
-		status, untypedOp := kv.px.Status(seq)
-		if status {
-			op := untypedOp.(Op)
-			return op
-		}
-		time.Sleep(to)
-	}
-}
-
-func (kv *ShardKV) logOp(newOp Op) (string, Err) {
-	// Keep trying new sequence slots until successfully committed to log.
-	seq := kv.latestSeq + 1
-	kv.px.Start(seq, newOp)
-
-	for {
-		op := kv.getLog(seq)
-		// Let paxos know we're done with this op/seq
-		kv.px.Done(seq)
-		kv.latestSeq = seq
-		// Check if operation has been cached or is invalid because of wrong group
-		_, err := kv.validateOp(op)
-		// This validation is to see if op has been invalidated by previous ops
-
-		value, oldE := kv.validateOp(newOp)
-		// If op we are trying to commit is not valid, return value,oldE
-		if oldE != "" {
-			return value, oldE
-		}
-
-		// If the current op from log is valid, then commit it
-		if err == "" {
-			kv.commit(op)
-		}
-
-		if op.UID == newOp.UID {
-			// Return the cached version, and OK
-			return kv.cache[op.ClientID], OK
-		} else {
-			seq += 1
-			kv.px.Start(seq, newOp)
-		}
-	}
-}
-
-func (kv *ShardKV) tryOp(op Op) (string, Err) {
-	op.UID = nrand()
-	value, err := kv.logOp(op)
-	return value, err
 }
 
 func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) error {
@@ -219,86 +171,6 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	reply.Err = err
 	// DPrintf(kv.gid, "PUTAPPEND reply %+v, config=%+v, \n\nargs =%+v", reply, kv.config, args)
 	return nil
-}
-
-func (kv *ShardKV) GetShard(args *RequestKVArgs, reply *RequestKVReply) error {
-	reply.Requests = make(map[int64]int64)
-	reply.Cache = make(map[int64]string)
-	reply.Data = make(map[string]string)
-	for key, val := range kv.data {
-		if key2shard(key) == args.Shard {
-			reply.Data[key] = val
-		}
-	}
-	for client, req := range kv.requests {
-		reply.Requests[client] = req
-		reply.Cache[client] = kv.cache[client]
-	}
-	return nil
-}
-
-func (kv *ShardKV) merge(newReq map[int64]int64, newCache map[int64]string, newData map[string]string, reply *RequestKVReply) {
-	for clientID, reqID := range reply.Requests {
-		oldReqID, ok := newReq[clientID]
-		if !ok || oldReqID < reqID {
-			newReq[clientID] = reqID
-			newCache[clientID] = reply.Cache[clientID]
-		}
-	}
-
-	for key, value := range reply.Data {
-		newData[key] = value
-	}
-}
-
-func (kv *ShardKV) reconfigure(config *shardmaster.Config) bool {
-	currentConfig := kv.config
-
-	newRequests := make(map[int64]int64)
-	newCache := make(map[int64]string)
-	newData := make(map[string]string)
-	// Find all shards/caches and merge them into latest maps
-	for shard := 0; shard < len(config.Shards); shard++ {
-		// If new shard
-		// DPrintf(kv.gid, "oldshards = %+v, new shards = %+v", currentConfig, config)
-		if config.Shards[shard] == kv.gid && currentConfig.Shards[shard] != kv.gid {
-			servers := currentConfig.Groups[currentConfig.Shards[shard]]
-			foundShard := false
-			if len(servers) == 0 {
-				foundShard = true
-			}
-			for _, srv := range servers {
-				args := &RequestKVArgs{}
-				args.Shard = shard
-				args.Config = currentConfig
-
-				reply := &RequestKVReply{}
-
-				ok := call(srv, "ShardKV.GetShard", args, reply)
-				if ok && (reply.Err == ErrWrongGroup) {
-					return false
-				}
-				if ok {
-					kv.merge(newRequests, newCache, newData, reply)
-					foundShard = true
-					break
-				}
-				// DPrintf(kv.gid, "starting reconfigure merge %+v", reply.Data)
-			}
-			if !foundShard {
-				return false
-			}
-		}
-	}
-
-	newOp := Op{
-		Op:             "Config",
-		MigrationReply: &RequestKVReply{Cache: newCache, Requests: newRequests, Data: newData},
-		Config:         *config,
-	}
-	kv.tryOp(newOp)
-	// log.Printf("RECONFIGURING %+v \n\n", newOp.MigrationReply)
-	return true
 }
 
 //
