@@ -62,8 +62,11 @@ func (kv *ShardKV) validateOp(op Op) (string, Err) {
 		if kv.config.Num >= op.Config.Num || kv.reconfiguring {
 			return "", ErrWrongGroup
 		}
-	case "EndConfig":
+	case "StopConfig":
 		if !kv.reconfiguring {
+			return "", ErrWrongGroup
+		}
+		if op.Config.Num != kv.newConfig.Num {
 			return "", ErrWrongGroup
 		}
 	case "ReceiveShard":

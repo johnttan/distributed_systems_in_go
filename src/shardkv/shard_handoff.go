@@ -2,8 +2,15 @@ package shardkv
 
 import "shardmaster"
 
-func (kv *ShardKV) ReceiveShard(args *SendShardArgs, reply *SendShardReply) {
-
+func (kv *ShardKV) ReceiveShard(args *SendShardArgs, reply *SendShardReply) error {
+  newOp := Op{
+    Op:             "ReceiveShard",
+    MigrationReply: args.MigrationReply,
+    Shard: args.MigrationReply.Shard
+  }
+  _, err := kv.tryOp(newOp)
+  reply.Err = err
+  return nil
 }
 
 func (kv *ShardKV) SendShard(gid int64, payload *RequestKVReply) {
@@ -49,51 +56,24 @@ func (kv *ShardKV) merge(newReq map[int64]int64, newCache map[int64]string, newD
 }
 
 func (kv *ShardKV) reconfigure(config *shardmaster.Config) bool {
-	currentConfig := kv.config
-
-	newRequests := make(map[int64]int64)
-	newCache := make(map[int64]string)
-	newData := make(map[string]string)
-	// Find all shards/caches and merge them into latest maps
-	for shard := 0; shard < len(config.Shards); shard++ {
-		// If new shard
-		// DPrintf(kv.gid, "oldshards = %+v, new shards = %+v", currentConfig, config)
-		if config.Shards[shard] == kv.gid && currentConfig.Shards[shard] != kv.gid {
-			servers := currentConfig.Groups[currentConfig.Shards[shard]]
-			foundShard := false
-			if len(servers) == 0 {
-				foundShard = true
-			}
-			for _, srv := range servers {
-				args := &RequestKVArgs{}
-				args.Shard = shard
-				args.Config = currentConfig
-
-				reply := &RequestKVReply{}
-
-				ok := call(srv, "ShardKV.GetShard", args, reply)
-				if ok && (reply.Err == ErrWrongGroup) {
-					return false
-				}
-				if ok {
-					kv.merge(newRequests, newCache, newData, reply)
-					foundShard = true
-					break
-				}
-				// DPrintf(kv.gid, "starting reconfigure merge %+v", reply.Data)
-			}
-			if !foundShard {
-				return false
-			}
-		}
-	}
-
-	newOp := Op{
-		Op:             "Config",
-		MigrationReply: &RequestKVReply{Cache: newCache, Requests: newRequests, Data: newData},
-		Config:         *config,
-	}
-	kv.tryOp(newOp)
-	// log.Printf("RECONFIGURING %+v \n\n", newOp.MigrationReply)
-	return true
+  if kv.reconfiguring {
+    done := true
+    for _, sendDone := range kv.shardsToSend {
+      done = done && sendDone
+    }
+    for _, receiveDone := range kv.shardsToReceive {
+      done = done && receiveDone
+    }
+    if !done{
+      return false
+    } else {
+      doneOp := Op{Op: "StopConfig", Config: config}
+      kv.tryOp(doneOp)
+      return true
+    }
+  }else{
+    startOp := Op{Op: "StartConfig", Config: config}
+    kv.tryOp(doneOp)
+    return false
+  }
 }
