@@ -91,6 +91,7 @@ func (ck *Clerk) Get(key string) string {
 	// You'll have to modify Get().
 	ck.reqID++
 	for {
+		DPrintf(ck.id, "trying client call again %v", ck.reqID)
 		shard := key2shard(key)
 
 		gid := ck.config.Shards[shard]
@@ -133,6 +134,8 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	// You'll have to modify Put().
 	ck.reqID++
 	for {
+		DPrintf(ck.id, "trying client call again %v", ck.reqID)
+
 		shard := key2shard(key)
 
 		gid := ck.config.Shards[shard]

@@ -56,6 +56,8 @@ type ShardKV struct {
 
 func (kv *ShardKV) validateOp(op Op) (string, Err) {
 	switch op.Op {
+	case "noop":
+		return "", ""
 	case "StartConfig":
 		// If config > op.Config, then we've already transitioned.
 		// Return an OK error to bypass commit.
@@ -71,11 +73,17 @@ func (kv *ShardKV) validateOp(op Op) (string, Err) {
 		}
 	case "ReceiveShard":
 		// Already received shard
-		if !kv.waitingOnShards[op.Shard] || !kv.reconfiguring {
-			return "", ErrWrongGroup
-		}
+
+		// if !kv.reconfiguring && op.Config.Num > kv.config.Num {
+		// 	DPrintf(kv.gid, "validating receiveshard not ready %+v", op)
+		// 	return "", ErrNotReady
+		// }
+		// if kv.config.Num >= kv.config.Num || !kv.reconfiguring {
+		// 	DPrintf(kv.gid, "validating receiveshard wrong group  %+v, reconfigure=%v", op, kv.reconfiguring)
+		// 	return "", ErrWrongGroup
+		// }
 	case "SendShard":
-		if !kv.reconfiguring {
+		if !kv.reconfiguring || op.Config.Num != kv.newConfig.Num {
 			return "", ErrWrongGroup
 		}
 	case "Get", "Put", "Append":
@@ -99,6 +107,7 @@ func (kv *ShardKV) commit(op Op) {
 	switch op.Op {
 	case "Get":
 		returnValue = kv.data[op.Key]
+		DPrintf(kv.gid, "committing get, op=%+v, data = %+v, config=%+v", op, kv.data, kv.config)
 	case "Put":
 		kv.data[op.Key] = op.Value
 	case "Append":
@@ -109,18 +118,23 @@ func (kv *ShardKV) commit(op Op) {
 		kv.reconfiguring = true
 		for shard := 0; shard < NShards; shard++ {
 			// If new shard, or old shard that is now unavailable, mark it offline
-			if kv.config.Shards[shard] == kv.gid && kv.newConfig.Shards[shard] != kv.gid {
-				kv.shardsToSend[shard] = true
-				kv.shardsOffline[shard] = true
-			}
-			if kv.config.Shards[shard] != kv.gid && kv.newConfig.Shards[shard] == kv.gid {
-				kv.shardsToReceive[shard] = true
-				kv.shardsOffline[shard] = true
+			if kv.newConfig.Num > 1 {
+				if kv.config.Shards[shard] == kv.gid && kv.newConfig.Shards[shard] != kv.gid {
+					DPrintf(kv.gid, "specifiying shards to send")
+					kv.shardsToSend[shard] = true
+					kv.shardsOffline[shard] = true
+				}
+				if kv.config.Shards[shard] != kv.gid && kv.newConfig.Shards[shard] == kv.gid {
+					DPrintf(kv.gid, "specifiying shards to receive")
+					kv.shardsToReceive[shard] = true
+					kv.shardsOffline[shard] = true
+				}
 			}
 		}
 	case "StopConfig":
 		kv.config = kv.newConfig
 		kv.reconfiguring = false
+		DPrintf(kv.gid, "ENDED CONFIGURATION %+v, data=%+v", kv.config, kv.data)
 		for ind, _ := range kv.shardsOffline {
 			kv.shardsOffline[ind] = false
 		}
@@ -128,11 +142,17 @@ func (kv *ShardKV) commit(op Op) {
 		args := &RequestKVArgs{Shard: op.Shard}
 		reply := &RequestKVReply{}
 		kv.getShard(args, reply)
+		DPrintf(kv.gid, "sending shard")
+
 		reply.Shard = op.Shard
-		kv.SendShard(op.GID, reply)
+		reply.Config = op.Config
+		gid := kv.newConfig.Shards[op.Shard]
+		kv.SendShard(gid, reply)
 	case "ReceiveShard":
+		DPrintf(kv.gid, "received shard %+v", op.MigrationReply)
 		kv.merge(kv.requests, kv.cache, kv.data, op.MigrationReply)
 		kv.shardsOffline[op.Shard] = false
+		kv.shardsToReceive[op.Shard] = false
 	}
 
 	// Cache return values and latest ReqID
@@ -182,6 +202,7 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 func (kv *ShardKV) tick() {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
+	kv.tryOp(Op{Op: "noop"})
 	newConfig := kv.sm.Query(-1)
 	for i := kv.config.Num + 1; i <= newConfig.Num; i++ {
 		currentNewConfig := kv.sm.Query(i)

@@ -15,6 +15,7 @@ const (
 	OK            = "OK"
 	ErrNoKey      = "ErrNoKey"
 	ErrWrongGroup = "ErrWrongGroup"
+	ErrNotReady   = "ErrNotReady"
 )
 
 type Err string
@@ -74,6 +75,7 @@ type RequestKVReply struct {
 	Data     map[string]string
 	Shard    int
 	Err      Err
+	Config   shardmaster.Config
 }
 
 type SendShardArgs struct {
