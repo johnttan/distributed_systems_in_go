@@ -46,7 +46,7 @@ type ShardKV struct {
 	shardsOffline   []bool
 	config          shardmaster.Config
 	waitingOnShards []bool
-	shardsNeeded map[int]bool
+	shardsNeeded    map[int]bool
 	newConfig       shardmaster.Config
 
 	client *Clerk
@@ -107,7 +107,7 @@ func (kv *ShardKV) commit(op Op) {
 			if op.Config.Num > 1 {
 				if kv.config.Shards[shard] == kv.gid && op.Config.Shards[shard] != kv.gid {
 					data := make(map[string]string)
-					for key, val := kv.data {
+					for key, val := range kv.data {
 						if key2shard(key) == shard {
 							data[key] = val
 						}
@@ -119,31 +119,9 @@ func (kv *ShardKV) commit(op Op) {
 			}
 			kv.config = op.Config
 		}
-	case "StopConfig":
-		kv.config = kv.newConfig
-		kv.reconfiguring = false
-		DPrintf(kv.gid, "ENDED CONFIGURATION %+v, data=%+v", kv.config, kv.data)
-		for ind, _ := range kv.shardsOffline {
-			kv.shardsOffline[ind] = false
-		}
-	case "SendShard":
-		args := &RequestKVArgs{Shard: op.Shard}
-		reply := &RequestKVReply{}
-		kv.getShard(args, reply)
-		DPrintf(kv.gid, "sending shard")
-
-		reply.Shard = op.Shard
-		reply.Config = op.Config
-		gid := kv.newConfig.Shards[op.Shard]
-		done := kv.SendShard(gid, reply)
-		for !done {
-			done = kv.SendShard(gid, reply)
-		}
 	case "ReceiveShard":
-		DPrintf(kv.gid, "received shard %+v", op.MigrationReply)
-		kv.merge(kv.requests, kv.cache, kv.data, op.MigrationReply)
-		kv.shardsOffline[op.Shard] = false
-		kv.shardsToReceive[op.Shard] = false
+		DPrintf(kv.gid, "received shard %+v", op.Data)
+		kv.merge(kv.data, op.Data)
 	}
 
 	// Cache return values and latest ReqID
@@ -197,7 +175,7 @@ func (kv *ShardKV) tick() {
 	newConfig := kv.sm.Query(kv.config.Num + 1)
 	// If it is next config to process
 	if newConfig.Num == kv.config.Num+1 {
-		startOp := Op{Op: "StartConfig", Config: *config}
+		startOp := Op{Op: "StartConfig", Config: newConfig}
 		kv.tryOp(startOp)
 	}
 }
@@ -237,7 +215,7 @@ func StartServer(gid int64, shardmasters []string,
 	kv.shardsOffline = make([]bool, NShards)
 	kv.waitingOnShards = make([]bool, NShards)
 	kv.shardsNeeded = make(map[int]bool)
-	kv.clerk = MakeClerk(shardmasters)
+	kv.client = MakeClerk(shardmasters)
 
 	rpcs := rpc.NewServer()
 	rpcs.Register(kv)

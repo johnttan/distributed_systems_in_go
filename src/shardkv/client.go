@@ -178,7 +178,7 @@ func (ck *Clerk) Append(key string, value string) string {
 	return v
 }
 
-func (ck *Clerk) SendShard(servers []string, config shardmaster.Config, shard int, data map[string][string]){
+func (ck *Clerk) SendShard(servers []string, config shardmaster.Config, shard int, data map[string]string) {
 	ck.mu.Lock()
 	defer ck.mu.Unlock()
 	for {
@@ -186,13 +186,13 @@ func (ck *Clerk) SendShard(servers []string, config shardmaster.Config, shard in
 
 		for _, srv := range servers {
 			args := &SendShardArgs{
-				shard: shard,
-				data: data,
-				config: config
+				Shard:  shard,
+				Data:   data,
+				Config: config,
 			}
 			reply := &SendShardReply{}
 
-			ok := call(srv, "ShardKV.SendShard", args, reply)
+			ok := call(srv, "ShardKV.ReceiveShard", args, reply)
 			if ok && reply.Err == OK {
 				return
 			}

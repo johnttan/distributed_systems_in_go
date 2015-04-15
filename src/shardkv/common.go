@@ -24,16 +24,16 @@ type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
-	Key            string
-	Value          string
-	Op             string
-	ReqID          int64
-	ClientID       int64
-	UID            int64
-	MigrationReply *RequestKVReply
-	Config         shardmaster.Config
-	Shard          int
-	GID            int64
+	Key      string
+	Value    string
+	Op       string
+	ReqID    int64
+	ClientID int64
+	UID      int64
+	Config   shardmaster.Config
+	Shard    int
+	GID      int64
+	Data     map[string]string
 }
 
 type PutAppendArgs struct {
@@ -79,9 +79,9 @@ type RequestKVReply struct {
 }
 
 type SendShardArgs struct {
-	shard int
-	data map[string][string]
-	config shardmaster.Config
+	Shard  int
+	Data   map[string]string
+	Config shardmaster.Config
 }
 
 type SendShardReply struct {
