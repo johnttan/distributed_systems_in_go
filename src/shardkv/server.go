@@ -46,8 +46,7 @@ type ShardKV struct {
 	shardsOffline   []bool
 	config          shardmaster.Config
 	waitingOnShards []bool
-	shardsToSend    map[int]bool
-	shardsToReceive map[int]bool
+	shardsNeeded map[int]bool
 	reconfiguring   bool
 	newConfig       shardmaster.Config
 
@@ -117,6 +116,7 @@ func (kv *ShardKV) commit(op Op) {
 		kv.data[op.Key] = kv.data[op.Key] + op.Value
 	case "StartConfig":
 		kv.reconfiguring = true
+		kv.shardsNeeded = make(map[int]bool)
 		for shard := 0; shard < NShards; shard++ {
 			// If new shard, or old shard that is now unavailable, mark it offline
 			if op.Config.Num > 1 {
@@ -129,10 +129,7 @@ func (kv *ShardKV) commit(op Op) {
 					}
 					// Send it off
 					go kv.client.SendShard(op.Config.Groups[op.Config.Shards[shard]], op.Config, shard, data)
-				}
-				if kv.config.Shards[shard] != kv.gid && op.Config.Shards[shard] == kv.gid {
-					DPrintf(kv.gid, "specifying shards to receive")
-					kv.shardsToReceive[shard] = true
+					kv.shardsNeeded[shard] = true
 				}
 			}
 			kv.config = op.Config
@@ -254,8 +251,7 @@ func StartServer(gid int64, shardmasters []string,
 	kv.config = shardmaster.Config{Num: -1}
 	kv.shardsOffline = make([]bool, NShards)
 	kv.waitingOnShards = make([]bool, NShards)
-	kv.shardsToReceive = make(map[int]bool)
-	kv.shardsToSend = make(map[int]bool)
+	kv.shardsNeeded = make(map[int]bool)
 	kv.clerk = MakeClerk(shardmasters)
 
 	rpcs := rpc.NewServer()

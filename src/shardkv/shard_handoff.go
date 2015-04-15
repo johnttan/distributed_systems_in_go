@@ -2,6 +2,22 @@ package shardkv
 
 import "shardmaster"
 
+func (kv *ShardKV) CheckIfConfiguring() bool {
+	// True if configuring, else false
+	if kv.config.Num == 0 || kv.config.Num == 1 {
+		return false
+	}
+  for shard, gid := kv.config.Shards {
+    if gid == kv.gid {
+      notReceived, needed := kv.shardsNeeded[shard]
+      if notReceived && needed {
+        return true
+      }
+    }
+  }
+  return false
+}
+
 func (kv *ShardKV) ReceiveShard(args *SendShardArgs, reply *SendShardReply) error {
 	newOp := Op{
 		Op:             "ReceiveShard",
