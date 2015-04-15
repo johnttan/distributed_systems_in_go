@@ -50,6 +50,8 @@ type ShardKV struct {
 	shardsToReceive map[int]bool
 	reconfiguring   bool
 	newConfig       shardmaster.Config
+
+	client *Clerk
 	//latest seq applied to data.
 	latestSeq int
 }
@@ -114,20 +116,26 @@ func (kv *ShardKV) commit(op Op) {
 		returnValue = kv.data[op.Key]
 		kv.data[op.Key] = kv.data[op.Key] + op.Value
 	case "StartConfig":
-		kv.newConfig = op.Config
 		kv.reconfiguring = true
 		for shard := 0; shard < NShards; shard++ {
 			// If new shard, or old shard that is now unavailable, mark it offline
-			if kv.newConfig.Num > 1 {
-				if kv.config.Shards[shard] == kv.gid && kv.newConfig.Shards[shard] != kv.gid {
-					DPrintf(kv.gid, "specifiying shards to send")
-					kv.shardsToSend[shard] = true
+			if op.Config.Num > 1 {
+				if kv.config.Shards[shard] == kv.gid && op.Config.Shards[shard] != kv.gid {
+					data := make(map[string]string)
+					for key, val := kv.data {
+						if key2shard(key) == shard {
+							data[key] = val
+						}
+					}
+					// Send it off
+					go kv.client.SendShard(op.Config.Groups[op.Config.Shards[shard]], op.Config, shard, data)
 				}
-				if kv.config.Shards[shard] != kv.gid && kv.newConfig.Shards[shard] == kv.gid {
-					DPrintf(kv.gid, "specifiying shards to receive")
+				if kv.config.Shards[shard] != kv.gid && op.Config.Shards[shard] == kv.gid {
+					DPrintf(kv.gid, "specifying shards to receive")
 					kv.shardsToReceive[shard] = true
 				}
 			}
+			kv.config = op.Config
 		}
 	case "StopConfig":
 		kv.config = kv.newConfig
@@ -204,13 +212,11 @@ func (kv *ShardKV) tick() {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 	kv.tryOp(Op{Op: "noop"})
-	newConfig := kv.sm.Query(-1)
-	for i := kv.config.Num + 1; i <= newConfig.Num; i++ {
-		currentNewConfig := kv.sm.Query(i)
-		success := kv.reconfigure(&currentNewConfig)
-		if !success {
-			return
-		}
+	newConfig := kv.sm.Query(kv.config.Num + 1)
+	// If it is next config to process
+	if newConfig.Num == kv.config.Num+1 {
+		startOp := Op{Op: "StartConfig", Config: *config}
+		kv.tryOp(startOp)
 	}
 }
 
@@ -250,6 +256,8 @@ func StartServer(gid int64, shardmasters []string,
 	kv.waitingOnShards = make([]bool, NShards)
 	kv.shardsToReceive = make(map[int]bool)
 	kv.shardsToSend = make(map[int]bool)
+	kv.clerk = MakeClerk(shardmasters)
+
 	rpcs := rpc.NewServer()
 	rpcs.Register(kv)
 
