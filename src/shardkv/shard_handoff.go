@@ -2,7 +2,7 @@ package shardkv
 
 import "shardmaster"
 
-func (kv *ShardKV) CheckIfConfiguring() bool {
+func (kv *ShardKV) isConfiguring() bool {
 	// True if configuring, else false
 	if kv.config.Num == 0 || kv.config.Num == 1 {
 		return false
@@ -28,28 +28,6 @@ func (kv *ShardKV) ReceiveShard(args *SendShardArgs, reply *SendShardReply) erro
 	_, err := kv.tryOp(newOp)
 	reply.Err = err
 	return nil
-}
-
-func (kv *ShardKV) SendShard(gid int64, payload *RequestKVReply) bool {
-	done := false
-
-	for _, srv := range kv.newConfig.Groups[gid] {
-		args := &SendShardArgs{MigrationReply: payload}
-		reply := &SendShardReply{}
-		DPrintf(kv.gid, "calling receiveshard %+v", args.MigrationReply)
-
-		ok := call(srv, "ShardKV.ReceiveShard", args, reply)
-
-		if ok {
-			DPrintf(kv.gid, "receive shard reply %+v", reply)
-			done = true
-			if reply.Err == ErrWrongGroup || reply.Err == OK {
-				kv.shardsToSend[payload.Shard] = false
-				break
-			}
-		}
-	}
-	return done
 }
 
 func (kv *ShardKV) getShard(args *RequestKVArgs, reply *RequestKVReply) error {

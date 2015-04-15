@@ -47,7 +47,6 @@ type ShardKV struct {
 	config          shardmaster.Config
 	waitingOnShards []bool
 	shardsNeeded map[int]bool
-	reconfiguring   bool
 	newConfig       shardmaster.Config
 
 	client *Clerk
@@ -62,34 +61,21 @@ func (kv *ShardKV) validateOp(op Op) (string, Err) {
 	case "StartConfig":
 		// If config > op.Config, then we've already transitioned.
 		// Return an OK error to bypass commit.
-		if kv.config.Num >= op.Config.Num || kv.reconfiguring {
+		if kv.config.Num >= op.Config.Num || kv.isConfiguring() {
 			return "", ErrWrongGroup
 		}
-	case "StopConfig":
-		if !kv.reconfiguring {
-			return "", ErrWrongGroup
-		}
-		// if op.Config.Num != kv.newConfig.Num {
-		// 	return "", ErrWrongGroup
-		// }
 	case "ReceiveShard":
 		// Already received shard
 
-		if op.Config.Num > kv.newConfig.Num {
-			DPrintf(kv.gid, "validating receiveshard not ready %+v", op)
+		if op.Config.Num > kv.config.Num {
 			return "", ErrNotReady
 		}
-		if !kv.reconfiguring {
-			DPrintf(kv.gid, "validating receiveshard wrong group  %+v, reconfigure=%v", op, kv.reconfiguring)
-			return "", ErrWrongGroup
-		}
-	case "SendShard":
-		if !kv.reconfiguring || op.Config.Num != kv.newConfig.Num {
-			return "", ErrWrongGroup
+		if op.Config.Num == kv.config.Num && !kv.isConfiguring() {
+			return "", ErrNotReady
 		}
 	case "Get", "Put", "Append":
 		shard := key2shard(op.Key)
-		if kv.reconfiguring {
+		if kv.isConfiguring() {
 			return "", ErrWrongGroup
 		}
 		if op.ReqID <= kv.requests[op.ClientID] {
@@ -115,7 +101,6 @@ func (kv *ShardKV) commit(op Op) {
 		returnValue = kv.data[op.Key]
 		kv.data[op.Key] = kv.data[op.Key] + op.Value
 	case "StartConfig":
-		kv.reconfiguring = true
 		kv.shardsNeeded = make(map[int]bool)
 		for shard := 0; shard < NShards; shard++ {
 			// If new shard, or old shard that is now unavailable, mark it offline
