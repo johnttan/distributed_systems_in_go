@@ -74,11 +74,11 @@ func (kv *ShardKV) validateOp(op Op) (string, Err) {
 	case "ReceiveShard":
 		// Already received shard
 
-		// if !kv.reconfiguring && op.Config.Num > kv.config.Num {
-		// 	DPrintf(kv.gid, "validating receiveshard not ready %+v", op)
-		// 	return "", ErrNotReady
-		// }
-		if kv.config.Num >= kv.config.Num || !kv.reconfiguring {
+		if !kv.reconfiguring && op.Config.Num > kv.config.Num {
+			DPrintf(kv.gid, "validating receiveshard not ready %+v", op)
+			return "", ErrNotReady
+		}
+		if !kv.reconfiguring {
 			DPrintf(kv.gid, "validating receiveshard wrong group  %+v, reconfigure=%v", op, kv.reconfiguring)
 			return "", ErrWrongGroup
 		}
