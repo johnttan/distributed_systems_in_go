@@ -17,6 +17,8 @@ func (kv *ShardKV) isConfiguring() bool {
 }
 
 func (kv *ShardKV) ReceiveShard(args *SendShardArgs, reply *SendShardReply) error {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
 	newOp := Op{
 		Op:     "ReceiveShard",
 		Data:   args.Data,

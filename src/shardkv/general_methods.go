@@ -38,7 +38,7 @@ func (kv *ShardKV) logOp(newOp Op) (string, Err) {
 		if err == "" {
 			kv.commit(op)
 		}
-		DPrintf(kv.gid, "retrying logOp, got=%+v", op)
+		// DPrintf(kv.gid, "retrying logOp, got=%+v", op)
 		if op.UID == newOp.UID {
 			// Return the cached version, and OK
 			return kv.cache[op.ClientID], OK
