@@ -89,8 +89,8 @@ func (ck *Clerk) Get(key string) string {
 	defer ck.mu.Unlock()
 
 	// You'll have to modify Get().
-	ck.reqID++
 	for {
+		ck.reqID++
 		DPrintf(ck.id, "trying client call again %v", ck.reqID)
 		shard := key2shard(key)
 
@@ -132,8 +132,8 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	defer ck.mu.Unlock()
 
 	// You'll have to modify Put().
-	ck.reqID++
 	for {
+		ck.reqID++
 		DPrintf(ck.id, "trying client call again %v", ck.reqID)
 
 		shard := key2shard(key)
@@ -176,4 +176,27 @@ func (ck *Clerk) Put(key string, value string) {
 func (ck *Clerk) Append(key string, value string) string {
 	v := ck.PutAppend(key, value, "Append")
 	return v
+}
+
+func (ck *Clerk) SendShard(servers []string, config shardmaster.Config, shard int, data map[string][string]){
+	ck.mu.Lock()
+	defer ck.mu.Unlock()
+	for {
+		ck.reqID++
+
+		for _, srv := range servers {
+			args := &SendShardArgs{
+				shard: shard,
+				data: data,
+				config: config
+			}
+			reply := &SendShardReply{}
+
+			ok := call(srv, "ShardKV.SendShard", args, reply)
+			if ok && reply.Err == OK {
+				return
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }

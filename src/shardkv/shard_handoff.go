@@ -26,9 +26,8 @@ func (kv *ShardKV) SendShard(gid int64, payload *RequestKVReply) bool {
 
 		if ok {
 			DPrintf(kv.gid, "receive shard reply %+v", reply)
-
+			done = true
 			if reply.Err == ErrWrongGroup || reply.Err == OK {
-				done = true
 				kv.shardsToSend[payload.Shard] = false
 				break
 			}

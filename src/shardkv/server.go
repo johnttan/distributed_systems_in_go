@@ -14,7 +14,7 @@ import "shardmaster"
 
 import "errors"
 
-const Debug = 1
+const Debug = 0
 
 // TODO: Implement more effective handoff strategy such that G1 -> G2 handoff prevents G1 from handling requests after initiation of handoff
 func DPrintf(me int64, format string, a ...interface{}) (n int, err error) {
@@ -68,13 +68,13 @@ func (kv *ShardKV) validateOp(op Op) (string, Err) {
 		if !kv.reconfiguring {
 			return "", ErrWrongGroup
 		}
-		if op.Config.Num != kv.newConfig.Num {
-			return "", ErrWrongGroup
-		}
+		// if op.Config.Num != kv.newConfig.Num {
+		// 	return "", ErrWrongGroup
+		// }
 	case "ReceiveShard":
 		// Already received shard
 
-		if !kv.reconfiguring && op.Config.Num > kv.config.Num {
+		if op.Config.Num > kv.newConfig.Num {
 			DPrintf(kv.gid, "validating receiveshard not ready %+v", op)
 			return "", ErrNotReady
 		}
@@ -88,7 +88,7 @@ func (kv *ShardKV) validateOp(op Op) (string, Err) {
 		}
 	case "Get", "Put", "Append":
 		shard := key2shard(op.Key)
-		if kv.shardsOffline[shard] {
+		if kv.reconfiguring {
 			return "", ErrWrongGroup
 		}
 		if op.ReqID <= kv.requests[op.ClientID] {
@@ -122,12 +122,10 @@ func (kv *ShardKV) commit(op Op) {
 				if kv.config.Shards[shard] == kv.gid && kv.newConfig.Shards[shard] != kv.gid {
 					DPrintf(kv.gid, "specifiying shards to send")
 					kv.shardsToSend[shard] = true
-					kv.shardsOffline[shard] = true
 				}
 				if kv.config.Shards[shard] != kv.gid && kv.newConfig.Shards[shard] == kv.gid {
 					DPrintf(kv.gid, "specifiying shards to receive")
 					kv.shardsToReceive[shard] = true
-					kv.shardsOffline[shard] = true
 				}
 			}
 		}
@@ -147,7 +145,10 @@ func (kv *ShardKV) commit(op Op) {
 		reply.Shard = op.Shard
 		reply.Config = op.Config
 		gid := kv.newConfig.Shards[op.Shard]
-		kv.SendShard(gid, reply)
+		done := kv.SendShard(gid, reply)
+		for !done {
+			done = kv.SendShard(gid, reply)
+		}
 	case "ReceiveShard":
 		DPrintf(kv.gid, "received shard %+v", op.MigrationReply)
 		kv.merge(kv.requests, kv.cache, kv.data, op.MigrationReply)

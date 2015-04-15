@@ -79,7 +79,9 @@ type RequestKVReply struct {
 }
 
 type SendShardArgs struct {
-	MigrationReply *RequestKVReply
+	shard int
+	data map[string][string]
+	config shardmaster.Config
 }
 
 type SendShardReply struct {
