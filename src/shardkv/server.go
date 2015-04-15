@@ -78,10 +78,10 @@ func (kv *ShardKV) validateOp(op Op) (string, Err) {
 		// 	DPrintf(kv.gid, "validating receiveshard not ready %+v", op)
 		// 	return "", ErrNotReady
 		// }
-		// if kv.config.Num >= kv.config.Num || !kv.reconfiguring {
-		// 	DPrintf(kv.gid, "validating receiveshard wrong group  %+v, reconfigure=%v", op, kv.reconfiguring)
-		// 	return "", ErrWrongGroup
-		// }
+		if kv.config.Num >= kv.config.Num || !kv.reconfiguring {
+			DPrintf(kv.gid, "validating receiveshard wrong group  %+v, reconfigure=%v", op, kv.reconfiguring)
+			return "", ErrWrongGroup
+		}
 	case "SendShard":
 		if !kv.reconfiguring || op.Config.Num != kv.newConfig.Num {
 			return "", ErrWrongGroup
