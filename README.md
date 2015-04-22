@@ -1,27 +1,27 @@
 # distributed_systems_in_go
 A series of distributed systems implementations based on the labs from 6.824.
 
-ShardKV
+##ShardKV
 
 Sharded key value service
 
-Shardmaster
+##Shardmaster
 
 Replicated shardmaster for managing of replica groups and shard distribution
 
-KVPaxos
+##KVPaxos
 
 Paxos based key value service
 
-Paxos library
+##Paxos library
 
 Paxos implementation
 
-PBService
+##PBService
 
 Primary backup key value store with viewserver
 
-Viewservice
+##Viewservice
 
 Service that manages views
 
